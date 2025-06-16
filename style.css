@@ -1,0 +1,19 @@
+body {
+    font-family: sans-serif;
+    padding: 2em;
+    background: #f0f0f0;
+}
+button {
+    padding: 1em;
+    font-size: 1em;
+}
+#status {
+    margin-top: 1em;
+}
+#dados {
+    margin-top: 2em;
+    white-space: pre-wrap;
+    background: #fff;
+    padding: 1em;
+    border: 1px solid #ccc;
+}
