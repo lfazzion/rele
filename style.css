@@ -1,19 +1,159 @@
+:root {
+    --primary-color: #007bff;
+    --primary-hover-color: #0056b3;
+    --bg-color: #f4f7f6;
+    --card-bg-color: #ffffff;
+    --text-color: #333;
+    --border-color: #e0e0e0;
+    --disconnected-color: #e74c3c;
+    --connecting-color: #f39c12;
+    --connected-color: #2ecc71;
+}
+
 body {
-    font-family: sans-serif;
-    padding: 2em;
-    background: #f0f0f0;
+    font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+        sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
 }
-button {
-    padding: 1em;
-    font-size: 1em;
+
+.container {
+    max-width: 800px;
+    width: 100%;
+    background-color: var(--card-bg-color);
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
-#status {
-    margin-top: 1em;
+
+header {
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 1.5rem;
+    margin-bottom: 1.5rem;
 }
-#dados {
-    margin-top: 2em;
-    white-space: pre-wrap;
-    background: #fff;
-    padding: 1em;
-    border: 1px solid #ccc;
+
+header h1 {
+    margin: 0;
+    color: var(--primary-color);
+}
+
+main > div {
+    background-color: #fafafa;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+h2 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 0.5rem;
+    display: inline-block;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    font-weight: 500;
+}
+
+.circle {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    transition: background-color 0.3s ease;
+}
+
+.circle.disconnected {
+    background-color: var(--disconnected-color);
+}
+.circle.connecting {
+    background-color: var(--connecting-color);
+}
+.circle.connected {
+    background-color: var(--connected-color);
+}
+
+.btn {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    transition: background-color 0.3s ease;
+}
+
+.btn:hover {
+    background-color: var(--primary-hover-color);
+}
+
+.btn:disabled {
+    background-color: #a0a0a0;
+    cursor: not-allowed;
+}
+
+.data-section {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+
+.data-section > div {
+    flex: 1;
+    min-width: 200px;
+}
+
+#voltage-display {
+    font-size: 3rem;
+    font-weight: bold;
+    color: #000;
+    text-align: center;
+    margin: 0;
+    padding: 1rem;
+    background-color: #e9ecef;
+    border-radius: 5px;
+}
+
+#history-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    padding: 0.5rem;
+}
+
+#history-list li {
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+#history-list li:last-child {
+    border-bottom: none;
+}
+
+footer {
+    text-align: center;
+    margin-top: 2rem;
+    color: #777;
+    font-size: 0.9rem;
 }

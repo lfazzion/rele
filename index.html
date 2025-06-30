@@ -1,15 +1,69 @@
 <!doctype html>
-<html>
+<html lang="pt-br">
     <head>
         <meta charset="UTF-8" />
-        <title>Monitor de Testes de Relé</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>ESP32 & Firebase Bridge</title>
         <link rel="stylesheet" href="style.css" />
+        <link
+            rel="icon"
+            href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📡</text></svg>"
+        />
     </head>
     <body>
-        <h1>Giga de Teste de Relé</h1>
-        <button id="connect">Conectar ao ESP32 (BLE)</button>
-        <div id="status">Status: Desconectado</div>
-        <div id="dados"></div>
+        <div class="container">
+            <header>
+                <h1>Interface ESP32 & Firebase</h1>
+                <p>
+                    Receba dados do ESP32 via Bluetooth e envie para o Firebase.
+                </p>
+            </header>
+
+            <main>
+                <div class="status-section">
+                    <h2>Status da Conexão</h2>
+                    <div class="status-indicator">
+                        <div
+                            id="status-circle"
+                            class="circle disconnected"
+                        ></div>
+                        <span id="status-text">Desconectado</span>
+                    </div>
+                    <button id="connect-button" class="btn">
+                        Conectar ao ESP32
+                    </button>
+                </div>
+
+                <div class="data-section">
+                    <div class="realtime-data">
+                        <h2>Última Leitura de Tensão</h2>
+                        <p id="voltage-display">-- V</p>
+                    </div>
+                    <div class="actions">
+                        <h2>Ações</h2>
+                        <button id="calibrate-button" class="btn" disabled>
+                            Calibração
+                        </button>
+                    </div>
+                </div>
+
+                <div class="history-section">
+                    <h2>Histórico de Leituras (do Firebase)</h2>
+                    <ul id="history-list">
+                        <li>Aguardando conexão com o Firebase...</li>
+                    </ul>
+                </div>
+            </main>
+
+            <footer>
+                <p>
+                    Desenvolvido para demonstração com Web Bluetooth e Firebase.
+                </p>
+            </footer>
+        </div>
+
+        <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
         <script src="script.js"></script>
     </body>
