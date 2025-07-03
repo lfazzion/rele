@@ -70,15 +70,47 @@ Siga estes passos para colocar o projeto em funcionamento.
 
 ---
 
-### Passo 3: Configuração do ESP32
+### Passo 3: Preparando o Ambiente e Gravando o Código no ESP32
 
-Você precisa programar seu ESP32 para criar um servidor BLE com o serviço e as características correspondentes aos UUIDs definidos no `script.js`.
+Esta seção detalha como configurar a Arduino IDE e carregar o firmware no seu ESP32.
 
--   **Serviço BLE:** Use o UUID `BLE_SERVICE_UUID`.
--   **Característica de Leitura (Notificação):** Crie uma característica com o UUID `BLE_RECEIVE_CHARACTERISTIC_UUID`. Ela deve ter a propriedade `NOTIFY`. O ESP32 deve escrever os dados de tensão (como um `float`) nesta característica.
--   **Característica de Escrita (Comando):** Crie uma característica com o UUID `BLE_SEND_CHARACTERISTIC_UUID`. Ela deve ter a propriedade `WRITE`. O ESP32 deve monitorar escritas nesta característica para receber comandos (como o comando de calibração).
+#### 3.1: Configurando a Arduino IDE
 
-> **Nota:** Um código de exemplo para o ESP32 não está incluído neste repositório, mas você pode encontrar excelentes exemplos para a biblioteca `BLE-Arduino` na internet.
+Se esta é sua primeira vez usando o ESP32 com a Arduino IDE, siga estes passos:
+
+1.  **Instale a Arduino IDE:** Baixe e instale a versão mais recente do [site oficial](https://www.arduino.cc/en/software).
+
+2.  **Adicione o Gerenciador de Placas ESP32:**
+    * Abra a Arduino IDE, vá em `Arquivo` > `Preferências`.
+    * No campo **"URLs Adicionais de Gerenciadores de Placas"**, cole a seguinte URL:
+        ```
+        [https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json](https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json)
+        ```
+    * Clique em "OK".
+
+3.  **Instale as Placas ESP32:**
+    * Vá em `Ferramentas` > `Placa` > `Gerenciador de Placas...`.
+    * Na barra de busca, digite **`esp32`** e instale o pacote "esp32 by Espressif Systems".
+
+#### 3.2: Gravando o Código no ESP32
+
+1.  **Abra o Código:** Abra o arquivo de código `.ino` fornecido neste projeto na sua Arduino IDE. O código deve ser idêntico ao exemplo para garantir a compatibilidade com os UUIDs.
+
+2.  **Conecte o ESP32:** Conecte sua placa ao computador com um cabo USB de dados.
+
+3.  **Configure a Placa e a Porta:**
+    * Vá em `Ferramentas` > `Placa` > `ESP32 Arduino` e selecione **"ESP32 Dev Module"**.
+    * Vá em `Ferramentas` > `Porta` e selecione a porta serial correta (ex: `COM3` ou `/dev/tty.usbserial-XXXX`).
+
+4.  **Carregue o Código:** Clique no botão **"Carregar"** (a seta para a direita →) na IDE.
+
+> **⚠️ Solução de Problemas Comuns:** Se você receber um erro como `Failed to connect to ESP32: Wrong boot mode...`, significa que a placa não entrou no modo de gravação automaticamente. Para resolver:
+> 1. Inicie o upload na IDE.
+> 2. Quando a mensagem "Conectando..." aparecer, **pressione e segure o botão `BOOT`** na sua placa.
+> 3. Enquanto segura `BOOT`, aperte e solte o botão `EN` (ou `RESET`).
+> 4. Solte o botão `BOOT`. A gravação deverá começar.
+
+5.  **Verifique a Saída:** Após a gravação, abra o **Monitor Serial** (`Ferramentas > Monitor Serial`) com a velocidade de **115200 baud**. Você deverá ver as mensagens "Iniciando o servidor BLE..." e "Servidor BLE iniciado e aguardando conexões.".
 
 ---
 
