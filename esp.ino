@@ -162,6 +162,11 @@ void setup() {
   BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(RX_CHARACTERISTIC_UUID, BLECharacteristic::PROPERTY_WRITE);
   pRxCharacteristic->setCallbacks(new MyCallbacks());
   pService->start();
+
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+
   BLEDevice::startAdvertising();
   Serial.println("Servidor BLE iniciado e aguardando conexões.");
 }

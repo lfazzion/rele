@@ -20,35 +20,64 @@ const calibrateButton = document.getElementById("calibrate-button");
 const verifyButton = document.getElementById("verify-button");
 const statusCircle = document.getElementById("status-circle");
 const statusText = document.getElementById("status-text");
-const resultsArea = document.getElementById("results-area");
+const res1Display = document.getElementById("res1-display");
+const res2Display = document.getElementById("res2-display");
+const avgDisplay = document.getElementById("avg-display");
+const historyList = document.getElementById("history-list");
 
-// Variáveis globais de estado
+// Variáveis globais
 let bleDevice = null;
 let sendCharacteristic = null;
-let db = null; // Variável para a instância do banco de dados
+let db = null;
 
-// --- Inicialização do Firebase ---
+// --- Inicialização e Funções do Firebase ---
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  console.log("Firebase inicializado com sucesso.");
+  console.log("Firebase inicializado.");
+  fetchHistoryFromFirebase(); // Busca o histórico ao carregar
 } catch (e) {
   console.error("Erro ao inicializar o Firebase.", e);
-  alert(
-    "Nao foi possivel conectar ao Firebase. Verifique a configuracao no script.js e as regras de seguranca no seu projeto Firebase.",
-  );
+}
+
+function saveVerificationResults(r1, r2, media) {
+  if (!db) return;
+  const dataToSave = {
+    timestamp: new Date().toISOString(),
+    resistencia1: r1,
+    resistencia2: r2,
+    media: media,
+  };
+  db.ref("verificacoes").push(dataToSave);
+}
+
+function fetchHistoryFromFirebase() {
+  if (!db) return;
+  const historyRef = db.ref("verificacoes").limitToLast(10);
+  historyRef.on("value", (snapshot) => {
+    historyList.innerHTML = "";
+    if (!snapshot.exists()) {
+      historyList.innerHTML = "<li>Nenhum histórico encontrado.</li>";
+      return;
+    }
+    snapshot.forEach((childSnapshot) => {
+      const data = childSnapshot.val();
+      const date = new Date(data.timestamp).toLocaleString("pt-BR");
+      const listItem = document.createElement("li");
+      listItem.textContent = `[${date}] R1: ${data.resistencia1.toFixed(3)}Ω, R2: ${data.resistencia2.toFixed(3)}Ω, Média: ${data.media.toFixed(3)}Ω`;
+      historyList.prepend(listItem);
+    });
+  });
 }
 
 // --- Funções de Controle da UI ---
 function updateConnectionStatus(status) {
   statusCircle.className = "circle";
   let isConnected = false;
-
   switch (status) {
     case "disconnected":
       statusText.textContent = "Desconectado";
       statusCircle.classList.add("disconnected");
-      connectButton.textContent = "Conectar ao ESP32";
       break;
     case "connecting":
       statusText.textContent = "Conectando...";
@@ -57,85 +86,80 @@ function updateConnectionStatus(status) {
     case "connected":
       statusText.textContent = "Conectado";
       statusCircle.classList.add("connected");
-      connectButton.textContent = "Desconectar";
       isConnected = true;
       break;
   }
-
   connectButton.disabled = status === "connecting";
   calibrateButton.disabled = !isConnected;
   verifyButton.disabled = !isConnected;
 }
 
-// --- Funções do Web Bluetooth e Firebase ---
-
-// Função para salvar os resultados no Firebase
-function saveResultsToFirebase(resultsText) {
-  if (!db) {
-    console.error(
-      "Conexão com Firebase não estabelecida. Não é possível salvar.",
-    );
-    return;
-  }
-
-  // Processa o texto para criar um objeto estruturado
-  const lines = resultsText.trim().split("\n");
-  const leituras = {};
-  lines.forEach((line) => {
-    // Exemplo de linha: "Resistencia 0:	12.345"
-    const parts = line.split(":");
-    if (parts.length === 2) {
-      const channelMatch = parts[0].match(/\d+/); // Pega o número do canal
-      const channel = channelMatch ? channelMatch[0] : null;
-      const value = parseFloat(parts[1].trim());
-      if (channel !== null && !isNaN(value)) {
-        leituras[channel] = value;
-      }
+function setButtonsLoading(isLoading) {
+  const buttons = [calibrateButton, verifyButton];
+  buttons.forEach((button) => {
+    button.disabled = isLoading;
+    if (isLoading) {
+      button.classList.add("loading");
+    } else {
+      button.classList.remove("loading");
     }
   });
-
-  // Cria o objeto final para salvar
-  const dataToSave = {
-    timestamp: new Date().toISOString(),
-    resultadoCompleto: resultsText,
-    leituras: leituras,
-  };
-
-  // Usa push() para criar um registro com ID único
-  db.ref("resultados_verificacao")
-    .push(dataToSave)
-    .then(() => {
-      console.log("Resultados salvos no Firebase com sucesso!");
-    })
-    .catch((error) => {
-      console.error("Erro ao salvar resultados no Firebase:", error);
-    });
+  // Re-habilita os botões apenas se estiver conectado
+  if (!isLoading && bleDevice && bleDevice.gatt.connected) {
+    calibrateButton.disabled = false;
+    verifyButton.disabled = false;
+  }
 }
 
-// Lida com dados recebidos do ESP32
+// --- Funções do Web Bluetooth ---
+
+// ALTERADO: Lida com dados e atualiza a nova UI
 function handleDataReceived(event) {
-  const value = event.target.value;
-  const receivedText = new TextDecoder().decode(value);
+  const receivedText = new TextDecoder().decode(event.target.value);
+  console.log(`Recebido: ${receivedText}`);
+  setButtonsLoading(false); // Para o feedback de carregamento
 
-  console.log(`Texto Recebido: ${receivedText}`);
-  resultsArea.textContent = receivedText;
+  if (receivedText.includes("Resistencia")) {
+    const lines = receivedText.trim().split("\n");
+    const values = [];
+    lines.forEach((line) => {
+      const value = parseFloat(line.split(":")[1].trim());
+      if (!isNaN(value)) {
+        values.push(value);
+      }
+    });
 
-  // NOVO: Salva no Firebase APENAS se for um resultado de verificação
-  if (db && receivedText.includes("Resistencia")) {
-    saveResultsToFirebase(receivedText);
+    if (values.length >= 2) {
+      const [r1, r2] = values;
+      const media = (r1 + r2) / 2;
+      res1Display.textContent = `${r1.toFixed(3)} Ω`;
+      res2Display.textContent = `${r2.toFixed(3)} Ω`;
+      avgDisplay.textContent = `${media.toFixed(3)} Ω`;
+      saveVerificationResults(r1, r2, media);
+    }
+  } else {
+    // Mostra outras mensagens (como "Calibração finalizada") em um alerta
+    alert(receivedText);
   }
 }
 
-// Conecta/Desconecta do dispositivo BLE
+// CORRIGIDO: Lida com a desconexão e limpa o estado
+function onDisconnected() {
+  console.log("Dispositivo desconectado.");
+  updateConnectionStatus("disconnected");
+  // Limpa os displays
+  res1Display.textContent = "-- Ω";
+  res2Display.textContent = "-- Ω";
+  avgDisplay.textContent = "-- Ω";
+  // Limpa a referência do dispositivo para forçar uma nova busca
+  bleDevice = null;
+  sendCharacteristic = null;
+}
+
 async function connectToESP32() {
-  if (bleDevice && bleDevice.gatt.connected) {
-    bleDevice.gatt.disconnect();
-    return;
-  }
+  // A lógica de reconexão é implicitamente corrigida ao zerar bleDevice em onDisconnected
   try {
     updateConnectionStatus("connecting");
-    resultsArea.textContent = "Procurando por dispositivos...";
-
     bleDevice = await navigator.bluetooth.requestDevice({
       filters: [{ services: [BLE_SERVICE_UUID] }],
       optionalServices: [BLE_SERVICE_UUID],
@@ -144,7 +168,6 @@ async function connectToESP32() {
     bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
     const server = await bleDevice.gatt.connect();
     const service = await server.getPrimaryService(BLE_SERVICE_UUID);
-
     const receiveCharacteristic = await service.getCharacteristic(
       BLE_RECEIVE_CHARACTERISTIC_UUID,
     );
@@ -153,47 +176,40 @@ async function connectToESP32() {
       "characteristicvaluechanged",
       handleDataReceived,
     );
-
     sendCharacteristic = await service.getCharacteristic(
       BLE_SEND_CHARACTERISTIC_UUID,
     );
-
     updateConnectionStatus("connected");
-    resultsArea.textContent =
-      "Conectado com sucesso! Pronto para receber comandos.";
   } catch (error) {
     console.error("Erro na conexão Bluetooth:", error);
-    resultsArea.textContent = `Erro: ${error.message}`;
+    alert(`Erro: ${error.message}`);
     updateConnectionStatus("disconnected");
   }
 }
 
-function onDisconnected() {
-  console.log("Dispositivo desconectado.");
-  bleDevice = null;
-  sendCharacteristic = null;
-  updateConnectionStatus("disconnected");
-  resultsArea.textContent = "Dispositivo desconectado.";
-}
-
-// Envia um comando numérico para o ESP32
+// ALTERADO: Envia comando com feedback visual
 async function sendCommand(command) {
-  if (!sendCharacteristic) {
-    alert("Não está conectado para enviar comandos.");
-    return;
-  }
+  if (!sendCharacteristic) return;
   try {
+    setButtonsLoading(true);
     const encoder = new TextEncoder();
     await sendCharacteristic.writeValue(encoder.encode(command.toString()));
-    resultsArea.textContent = `Comando '${command}' enviado. Aguardando resposta...`;
   } catch (error) {
     console.error("Erro ao enviar comando:", error);
-    resultsArea.textContent = `Erro ao enviar comando: ${error.message}`;
+    alert(`Erro ao enviar comando: ${error.message}`);
+    setButtonsLoading(false);
   }
 }
 
 // --- Listeners de Eventos ---
-connectButton.addEventListener("click", connectToESP32);
+connectButton.addEventListener("click", () => {
+  // Se estiver conectado e o botão for clicado, ele desconecta.
+  if (bleDevice && bleDevice.gatt.connected) {
+    bleDevice.gatt.disconnect();
+  } else {
+    connectToESP32();
+  }
+});
 calibrateButton.addEventListener("click", () => sendCommand(1));
 verifyButton.addEventListener("click", () => sendCommand(2));
 

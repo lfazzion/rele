@@ -5,61 +5,61 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>ESP32 & ADS1115 Interface</title>
         <link rel="stylesheet" href="style.css" />
-        <link
-            rel="icon"
-            href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📡</text></svg>"
-        />
     </head>
     <body>
         <div class="container">
             <header>
-                <h1>Interface ESP32 & ADS1115</h1>
-                <p>Controle seu sensor ADS1115 via Web Bluetooth.</p>
+                <h1>Interface de Medição de Resistência</h1>
+                <div class="status-indicator">
+                    <div id="status-circle" class="circle disconnected"></div>
+                    <span id="status-text">Desconectado</span>
+                </div>
+                <button id="connect-button" class="btn">
+                    Conectar ao ESP32
+                </button>
             </header>
 
             <main>
-                <div class="status-section">
-                    <h2>Conexão</h2>
-                    <div class="status-indicator">
-                        <div
-                            id="status-circle"
-                            class="circle disconnected"
-                        ></div>
-                        <span id="status-text">Desconectado</span>
+                <section class="data-section">
+                    <div class="data-card">
+                        <h2>Resistência 1</h2>
+                        <p id="res1-display">-- Ω</p>
                     </div>
-                    <button id="connect-button" class="btn">
-                        Conectar ao ESP32
-                    </button>
-                </div>
+                    <div class="data-card">
+                        <h2>Resistência 2</h2>
+                        <p id="res2-display">-- Ω</p>
+                    </div>
+                    <div class="data-card">
+                        <h2>Média</h2>
+                        <p id="avg-display">-- Ω</p>
+                    </div>
+                </section>
 
-                <div class="actions-section">
+                <section class="actions-section">
                     <h2>Comandos</h2>
                     <button
                         id="calibrate-button"
                         class="btn action-btn"
                         disabled
                     >
-                        1. Iniciar Calibração
+                        Iniciar Calibração
                     </button>
                     <button id="verify-button" class="btn action-btn" disabled>
-                        2. Verificar Resistências
+                        Verificar Resistências
                     </button>
-                </div>
+                </section>
 
-                <div class="results-section">
-                    <h2>Console de Resultados</h2>
-                    <pre id="results-area">Aguardando comandos...</pre>
-                </div>
+                <section class="history-section">
+                    <h2>Histórico de Leituras (do Firebase)</h2>
+                    <ul id="history-list">
+                        <li>Aguardando conexão com o Firebase...</li>
+                    </ul>
+                </section>
             </main>
-
-            <footer>
-                <p>Adaptado para controle de comandos específicos.</p>
-            </footer>
         </div>
 
         <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
         <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-
         <script src="script.js"></script>
     </body>
 </html>
