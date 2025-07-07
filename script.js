@@ -1,6 +1,4 @@
-// --------------- CONFIGURAÇÕES (ALTERE AQUI) ---------------
-
-// 1. Cole aqui a configuração do seu projeto Firebase
+// --- Configuração do Firebase ---
 const firebaseConfig = {
   apiKey: "AIzaSyBBJWqqig7VM8wio5MNuv_UwF6TRGKK720",
   authDomain: "jiga-de-teste.firebaseapp.com",
@@ -11,225 +9,193 @@ const firebaseConfig = {
   appId: "1:908087994475:web:feaf5ae804b0c2838a692e",
 };
 
-// 2. Defina os UUIDs para o serviço e características Bluetooth
-//    ESTES VALORES DEVEM SER OS MESMOS NO SEU CÓDIGO DO ESP32!
+// --- Definições de UUIDs do Bluetooth ---
 const BLE_SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-// Característica para receber dados do ESP32 (Tensão)
 const BLE_RECEIVE_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-// Característica para enviar dados para o ESP32 (Comando de Calibração)
 const BLE_SEND_CHARACTERISTIC_UUID = "a4d23253-2778-436c-9c23-2c1b50d87635";
 
-// --------------- FIM DAS CONFIGURAÇÕES ---------------
-
-// Referências aos elementos da UI
+// --- Referências aos Elementos da UI ---
 const connectButton = document.getElementById("connect-button");
 const calibrateButton = document.getElementById("calibrate-button");
+const verifyButton = document.getElementById("verify-button");
 const statusCircle = document.getElementById("status-circle");
 const statusText = document.getElementById("status-text");
-const voltageDisplay = document.getElementById("voltage-display");
-const historyList = document.getElementById("history-list");
+const resultsArea = document.getElementById("results-area");
 
-// Variáveis de estado globais
+// Variáveis globais de estado
 let bleDevice = null;
-let bleServer = null;
-let receiveCharacteristic = null;
 let sendCharacteristic = null;
-let db = null;
+let db = null; // Variável para a instância do banco de dados
 
-// Inicialização do Firebase
+// --- Inicialização do Firebase ---
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
   console.log("Firebase inicializado com sucesso.");
-  fetchHistoryFromFirebase();
 } catch (e) {
-  console.error(
-    "Erro ao inicializar o Firebase. Verifique suas configurações.",
-    e,
+  console.error("Erro ao inicializar o Firebase.", e);
+  alert(
+    "Nao foi possivel conectar ao Firebase. Verifique a configuracao no script.js e as regras de seguranca no seu projeto Firebase.",
   );
-  historyList.innerHTML =
-    "<li>Erro ao conectar ao Firebase. Verifique as credenciais no script.js.</li>";
 }
 
-// Atualiza o status visual da conexão
+// --- Funções de Controle da UI ---
 function updateConnectionStatus(status) {
-  statusCircle.className = "circle"; // Reseta as classes
+  statusCircle.className = "circle";
+  let isConnected = false;
+
   switch (status) {
     case "disconnected":
       statusText.textContent = "Desconectado";
       statusCircle.classList.add("disconnected");
-      connectButton.disabled = false;
-      calibrateButton.disabled = true;
       connectButton.textContent = "Conectar ao ESP32";
       break;
     case "connecting":
       statusText.textContent = "Conectando...";
       statusCircle.classList.add("connecting");
-      connectButton.disabled = true;
       break;
     case "connected":
       statusText.textContent = "Conectado";
       statusCircle.classList.add("connected");
-      connectButton.disabled = false;
-      calibrateButton.disabled = false;
       connectButton.textContent = "Desconectar";
+      isConnected = true;
       break;
   }
+
+  connectButton.disabled = status === "connecting";
+  calibrateButton.disabled = !isConnected;
+  verifyButton.disabled = !isConnected;
 }
 
-// Função para lidar com o recebimento de dados do ESP32
-function handleDataReceived(event) {
-  const value = event.target.value;
-  // O ESP32 deve enviar a tensão como um float de 32 bits (4 bytes)
-  // Usamos `true` para little-endian, que é o padrão para ESP32
-  const voltage = value.getFloat32(0, true).toFixed(2);
+// --- Funções do Web Bluetooth e Firebase ---
 
-  console.log(`Tensão recebida: ${voltage} V`);
-
-  // Atualiza a UI
-  voltageDisplay.textContent = `${voltage} V`;
-
-  // Envia para o Firebase
-  sendDataToFirebase(parseFloat(voltage));
-}
-
-// Função para enviar dados para o Firebase Realtime Database
-function sendDataToFirebase(voltage) {
-  if (!db) return;
-  const timestamp = new Date().toISOString();
-
-  // O método `push` cria um ID único para cada leitura
-  db.ref("leituras")
-    .push({
-      tensao: voltage,
-      timestamp: timestamp,
-    })
-    .catch((error) =>
-      console.error("Erro ao enviar dados para o Firebase:", error),
+// Função para salvar os resultados no Firebase
+function saveResultsToFirebase(resultsText) {
+  if (!db) {
+    console.error(
+      "Conexão com Firebase não estabelecida. Não é possível salvar.",
     );
-}
-
-// Função para buscar e exibir o histórico do Firebase
-function fetchHistoryFromFirebase() {
-  if (!db) return;
-
-  const leiturasRef = db.ref("leituras").limitToLast(10);
-
-  // O listener 'value' é em tempo real. Ele será acionado sempre que os dados mudarem.
-  leiturasRef.on(
-    "value",
-    (snapshot) => {
-      historyList.innerHTML = ""; // Limpa a lista antiga
-      if (!snapshot.exists()) {
-        historyList.innerHTML = "<li>Nenhum dado de histórico encontrado.</li>";
-        return;
-      }
-
-      const data = snapshot.val();
-      // Firebase não garante a ordem, então pegamos as chaves e as exibimos
-      // na ordem em que estão (limitToLast já as ordena)
-      Object.keys(data).forEach((key) => {
-        const leitura = data[key];
-        const listItem = document.createElement("li");
-        const date = new Date(leitura.timestamp);
-        const formattedTime = date.toLocaleTimeString("pt-BR");
-        listItem.textContent = `Tensão: ${leitura.tensao.toFixed(2)} V - Horário: ${formattedTime}`;
-        historyList.prepend(listItem); // Adiciona no topo para ver os mais recentes primeiro
-      });
-    },
-    (error) => {
-      console.error("Erro ao buscar dados do Firebase:", error);
-      historyList.innerHTML = "<li>Não foi possível carregar o histórico.</li>";
-    },
-  );
-}
-
-// Função para conectar/desconectar do dispositivo BLE
-async function connectToESP32() {
-  if (bleDevice && bleDevice.gatt.connected) {
-    console.log("Desconectando...");
-    bleDevice.gatt.disconnect();
     return;
   }
 
+  // Processa o texto para criar um objeto estruturado
+  const lines = resultsText.trim().split("\n");
+  const leituras = {};
+  lines.forEach((line) => {
+    // Exemplo de linha: "Resistencia 0:	12.345"
+    const parts = line.split(":");
+    if (parts.length === 2) {
+      const channelMatch = parts[0].match(/\d+/); // Pega o número do canal
+      const channel = channelMatch ? channelMatch[0] : null;
+      const value = parseFloat(parts[1].trim());
+      if (channel !== null && !isNaN(value)) {
+        leituras[channel] = value;
+      }
+    }
+  });
+
+  // Cria o objeto final para salvar
+  const dataToSave = {
+    timestamp: new Date().toISOString(),
+    resultadoCompleto: resultsText,
+    leituras: leituras,
+  };
+
+  // Usa push() para criar um registro com ID único
+  db.ref("resultados_verificacao")
+    .push(dataToSave)
+    .then(() => {
+      console.log("Resultados salvos no Firebase com sucesso!");
+    })
+    .catch((error) => {
+      console.error("Erro ao salvar resultados no Firebase:", error);
+    });
+}
+
+// Lida com dados recebidos do ESP32
+function handleDataReceived(event) {
+  const value = event.target.value;
+  const receivedText = new TextDecoder().decode(value);
+
+  console.log(`Texto Recebido: ${receivedText}`);
+  resultsArea.textContent = receivedText;
+
+  // NOVO: Salva no Firebase APENAS se for um resultado de verificação
+  if (db && receivedText.includes("Resistencia")) {
+    saveResultsToFirebase(receivedText);
+  }
+}
+
+// Conecta/Desconecta do dispositivo BLE
+async function connectToESP32() {
+  if (bleDevice && bleDevice.gatt.connected) {
+    bleDevice.gatt.disconnect();
+    return;
+  }
   try {
     updateConnectionStatus("connecting");
+    resultsArea.textContent = "Procurando por dispositivos...";
 
-    console.log("Solicitando dispositivo Bluetooth...");
     bleDevice = await navigator.bluetooth.requestDevice({
       filters: [{ services: [BLE_SERVICE_UUID] }],
       optionalServices: [BLE_SERVICE_UUID],
     });
 
-    console.log("Dispositivo selecionado:", bleDevice.name);
     bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
+    const server = await bleDevice.gatt.connect();
+    const service = await server.getPrimaryService(BLE_SERVICE_UUID);
 
-    console.log("Conectando ao GATT Server...");
-    bleServer = await bleDevice.gatt.connect();
-
-    console.log("Obtendo o Serviço BLE...");
-    const service = await bleServer.getPrimaryService(BLE_SERVICE_UUID);
-
-    console.log("Obtendo a Característica de Recebimento...");
-    receiveCharacteristic = await service.getCharacteristic(
+    const receiveCharacteristic = await service.getCharacteristic(
       BLE_RECEIVE_CHARACTERISTIC_UUID,
     );
-
-    console.log("Iniciando notificações...");
     await receiveCharacteristic.startNotifications();
     receiveCharacteristic.addEventListener(
       "characteristicvaluechanged",
       handleDataReceived,
     );
 
-    console.log("Obtendo a Característica de Envio...");
     sendCharacteristic = await service.getCharacteristic(
       BLE_SEND_CHARACTERISTIC_UUID,
     );
 
     updateConnectionStatus("connected");
-    console.log("Conectado com sucesso!");
+    resultsArea.textContent =
+      "Conectado com sucesso! Pronto para receber comandos.";
   } catch (error) {
     console.error("Erro na conexão Bluetooth:", error);
-    alert(`Erro: ${error.message}`);
+    resultsArea.textContent = `Erro: ${error.message}`;
     updateConnectionStatus("disconnected");
   }
 }
 
-// Função chamada quando o dispositivo é desconectado
 function onDisconnected() {
   console.log("Dispositivo desconectado.");
   bleDevice = null;
-  bleServer = null;
-  receiveCharacteristic = null;
   sendCharacteristic = null;
   updateConnectionStatus("disconnected");
-  voltageDisplay.textContent = "-- V";
+  resultsArea.textContent = "Dispositivo desconectado.";
 }
 
-// Função para enviar o comando de calibração
-async function sendCalibrationCommand() {
+// Envia um comando numérico para o ESP32
+async function sendCommand(command) {
   if (!sendCharacteristic) {
-    alert("Não conectado à característica de envio.");
+    alert("Não está conectado para enviar comandos.");
     return;
   }
-
   try {
-    // Enviaremos o valor '1' como um comando de calibração.
-    // O valor pode ser qualquer coisa que seu ESP32 espere.
-    const command = new Uint8Array([1]);
-    await sendCharacteristic.writeValue(command);
-    console.log("Comando de calibração enviado!");
-    alert("Comando de calibração enviado para o ESP32.");
+    const encoder = new TextEncoder();
+    await sendCharacteristic.writeValue(encoder.encode(command.toString()));
+    resultsArea.textContent = `Comando '${command}' enviado. Aguardando resposta...`;
   } catch (error) {
     console.error("Erro ao enviar comando:", error);
-    alert(`Erro ao enviar comando: ${error.message}`);
+    resultsArea.textContent = `Erro ao enviar comando: ${error.message}`;
   }
 }
 
-// Adiciona os listeners aos botões
+// --- Listeners de Eventos ---
 connectButton.addEventListener("click", connectToESP32);
-calibrateButton.addEventListener("click", sendCalibrationCommand);
+calibrateButton.addEventListener("click", () => sendCommand(1));
+verifyButton.addEventListener("click", () => sendCommand(2));
 
 // Estado inicial da UI
 updateConnectionStatus("disconnected");

@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>ESP32 & Firebase Bridge</title>
+        <title>ESP32 & ADS1115 Interface</title>
         <link rel="stylesheet" href="style.css" />
         <link
             rel="icon"
@@ -13,15 +13,13 @@
     <body>
         <div class="container">
             <header>
-                <h1>Interface ESP32 & Firebase</h1>
-                <p>
-                    Receba dados do ESP32 via Bluetooth e envie para o Firebase.
-                </p>
+                <h1>Interface ESP32 & ADS1115</h1>
+                <p>Controle seu sensor ADS1115 via Web Bluetooth.</p>
             </header>
 
             <main>
                 <div class="status-section">
-                    <h2>Status da Conexão</h2>
+                    <h2>Conexão</h2>
                     <div class="status-indicator">
                         <div
                             id="status-circle"
@@ -34,31 +32,28 @@
                     </button>
                 </div>
 
-                <div class="data-section">
-                    <div class="realtime-data">
-                        <h2>Última Leitura de Tensão</h2>
-                        <p id="voltage-display">-- V</p>
-                    </div>
-                    <div class="actions">
-                        <h2>Ações</h2>
-                        <button id="calibrate-button" class="btn" disabled>
-                            Calibração
-                        </button>
-                    </div>
+                <div class="actions-section">
+                    <h2>Comandos</h2>
+                    <button
+                        id="calibrate-button"
+                        class="btn action-btn"
+                        disabled
+                    >
+                        1. Iniciar Calibração
+                    </button>
+                    <button id="verify-button" class="btn action-btn" disabled>
+                        2. Verificar Resistências
+                    </button>
                 </div>
 
-                <div class="history-section">
-                    <h2>Histórico de Leituras (do Firebase)</h2>
-                    <ul id="history-list">
-                        <li>Aguardando conexão com o Firebase...</li>
-                    </ul>
+                <div class="results-section">
+                    <h2>Console de Resultados</h2>
+                    <pre id="results-area">Aguardando comandos...</pre>
                 </div>
             </main>
 
             <footer>
-                <p>
-                    Desenvolvido para demonstração com Web Bluetooth e Firebase.
-                </p>
+                <p>Adaptado para controle de comandos específicos.</p>
             </footer>
         </div>
 

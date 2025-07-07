@@ -1,138 +1,172 @@
+/*
+ * Código adaptado para controle via Web Bluetooth.
+ * Comandos:
+ * - Recebe '1' via BLE para iniciar a calibração.
+ * - Recebe '2' via BLE para iniciar a verificação de resistência.
+ * Respostas são enviadas como texto via notificação BLE.
+ */
+
+// Bibliotecas do sensor e comunicação
+#include "ADS1X15.h"
+#include <Wire.h>
+
+// Bibliotecas do Bluetooth Low Energy (BLE)
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
-#include <BLE2902.h> // Necessário para as notificações funcionarem corretamente
+#include <BLE2902.h>
 
-// --- DEFINIÇÕES QUE DEVEM SER IDÊNTICAS ÀS DO ARQUIVO script.js ---
+// --- UUIDs para o Serviço e Características BLE ---
+// Devem ser os mesmos definidos no arquivo script.js da página web
 #define SERVICE_UUID           "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-// Característica para ENVIAR dados PARA a página web (Notificação)
-#define TX_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8" 
-// Característica para RECEBER dados DA página web (Escrita)
+// Característica para ENVIAR dados (Respostas) PARA a página web (Notificação)
+#define TX_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+// Característica para RECEBER dados (Comandos) DA página web (Escrita)
 #define RX_CHARACTERISTIC_UUID "a4d23253-2778-436c-9c23-2c1b50d87635"
 
-// Variáveis globais para o BLE
-BLECharacteristic *pTxCharacteristic; // Ponteiro para a característica de transmissão
-BLECharacteristic *pRxCharacteristic; // Ponteiro para a característica de recepção
-bool deviceConnected = false;         // Flag para controlar o status da conexão
+// Pinos do multiplexador
+#define A 15
+#define B 2
+#define C 4
 
-// Variável para o sensor fake
-float voltage = 3.0;
+// Configurações do sensor ADS1115
+ADS1115 ADS(0x48);
+const float res_ref = 99.781;
 
-// LED integrado para feedback visual
-#define LED_PIN 2
+// Variáveis globais
+static char binaryString[3];
+float res;
+float r0[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-// Classe de Callback para eventos do servidor (conexão e desconexão)
+// Variáveis globais do BLE
+BLECharacteristic *pTxCharacteristic;
+bool deviceConnected = false;
+
+// --- Funções do Sensor e Multiplexador (seu código original) ---
+
+float get_res(){
+  int16_t val_01 = ADS.readADC_Differential_0_1();
+  int16_t val_13 = ADS.readADC_Differential_1_3();
+  float volts_ref = ADS.toVoltage(val_01);
+  float volts = ADS.toVoltage(val_13);
+  return (res_ref * volts) / volts_ref;
+}
+
+void toBinary(int num) {
+  for (int i = 2; i >= 0; i--) {
+    binaryString[2 - i] = ((num >> i) & 1) ? '1' : '0';
+  }
+}
+
+void multiplx_controler(int OT){
+  toBinary(OT);
+  digitalWrite(A, (binaryString[0] == '1') ? HIGH : LOW);
+  digitalWrite(B, (binaryString[1] == '1') ? HIGH : LOW);
+  digitalWrite(C, (binaryString[2] == '1') ? HIGH : LOW);
+}
+
+// --- Funções de Lógica de Controle ---
+
+void run_calibrate(){
+  for(int j = 0; j < 8; j++){
+    float r0_base = 0.0;
+    for(int i = 0; i < 10; i++){
+      r0_base += get_res();
+    }
+    r0[j] = r0_base / 10.0;
+  }
+  String response = "Calibracao finalizada.";
+  Serial.println(response);
+  pTxCharacteristic->setValue(response.c_str());
+  pTxCharacteristic->notify();
+}
+
+void run_verify(){
+  String fullResponse = ""; // String para acumular todas as respostas
+  for(int j = 0; j < 2; j++){
+    multiplx_controler(j);
+    delay(500);
+    res = 0;
+    for(int i = 0; i < 20; i++){
+      res += get_res() - r0[j];
+    }
+    res = res / 20.0;
+
+    // Constrói a linha de resposta
+    String line = "Resistencia " + String(j) + ":\t" + String(res, 3) + "\n";
+    fullResponse += line; // Acumula a linha na string principal
+  }
+  Serial.print("Enviando Resposta:\n" + fullResponse);
+  pTxCharacteristic->setValue(fullResponse.c_str());
+  pTxCharacteristic->notify();
+}
+
+// --- Callbacks do BLE ---
+
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       deviceConnected = true;
-      digitalWrite(LED_PIN, HIGH); // Acende o LED quando conectado
       Serial.println("Dispositivo Conectado!");
     }
-
     void onDisconnect(BLEServer* pServer) {
       deviceConnected = false;
-      digitalWrite(LED_PIN, LOW); // Apaga o LED quando desconectado
       Serial.println("Dispositivo Desconectado!");
-      // Reinicia o advertising para que possa ser encontrado novamente
-      BLEDevice::startAdvertising(); 
+      BLEDevice::startAdvertising();
     }
 };
 
-// Classe de Callback para eventos de escrita na característica de recepção (RX)
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
-      // Pega o valor recebido da página web
-      // CORREÇÃO APLICADA AQUI: Usando o tipo "String" do Arduino
-      String rxValue = pCharacteristic->getValue();
-
-      if (rxValue.length() > 0) {
+      String value = pCharacteristic->getValue().c_str();
+      if (value.length() > 0) {
         Serial.print("Comando recebido: ");
-        // O comando é enviado como um array de bytes. Verifica-se o primeiro byte.
-        if (rxValue[0] == 1) {
-          Serial.println("Comando de Calibração (1)!");
-          // Aqui fica a lógica da função de calibração
-          // Por exemplo, piscar o LED 3 vezes para confirmar
-          for(int i=0; i<3; i++) {
-            digitalWrite(LED_PIN, HIGH); delay(100);
-            digitalWrite(LED_PIN, LOW); delay(100);
-          }
-          digitalWrite(LED_PIN, HIGH); // Deixa aceso para indicar que continua conectado
-        } else {
-          Serial.print("Comando desconhecido: ");
-          Serial.println((int)rxValue[0]);
+        int command = value.toInt(); // Converte o valor recebido para inteiro
+        Serial.println(command);
+
+        switch(command){
+          case 1: // Comando para Calibrar
+            run_calibrate();
+            break;
+          case 2: // Comando para Verificar
+            run_verify();
+            break;
+          default:
+            Serial.println("Comando invalido");
+            String response = "Comando " + value + " invalido.";
+            pTxCharacteristic->setValue(response.c_str());
+            pTxCharacteristic->notify();
         }
       }
     }
 };
 
-
 void setup() {
-  // Inicia a comunicação serial para debug
-  Serial.begin(115200);
+  Serial.begin(115200); // Usar 115200 para melhor performance
+  Wire.begin();
+
+  pinMode(A, OUTPUT);
+  pinMode(B, OUTPUT);
+  pinMode(C, OUTPUT);
+
+  ADS.begin();
+  ADS.setGain(0);
+
+  // --- Configuração do Servidor BLE ---
   Serial.println("Iniciando o servidor BLE...");
-
-  // Configura o pino do LED como saída
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW); // Começa com o LED apagado
-
-  // --- CONFIGURAÇÃO DO SERVIDOR BLE ---
-
-  // 1. Inicializa o dispositivo BLE com um nome
-  BLEDevice::init("Meu ESP32");
-
-  // 2. Cria o servidor BLE
+  BLEDevice::init("ESP32-ADS1115");
   BLEServer *pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks()); // Define os callbacks de conexão/desconexão
-
-  // 3. Cria o serviço BLE
+  pServer->setCallbacks(new MyServerCallbacks());
   BLEService *pService = pServer->createService(SERVICE_UUID);
-
-  // 4. Cria a Característica de Transmissão (TX - Notificação)
-  pTxCharacteristic = pService->createCharacteristic(
-                      TX_CHARACTERISTIC_UUID,
-                      BLECharacteristic::PROPERTY_NOTIFY
-                    );
-  // Adiciona um descritor BLE2902, essencial para que as notificações funcionem com a web
+  pTxCharacteristic = pService->createCharacteristic(TX_CHARACTERISTIC_UUID, BLECharacteristic::PROPERTY_NOTIFY);
   pTxCharacteristic->addDescriptor(new BLE2902());
-
-  // 5. Cria a Característica de Recepção (RX - Escrita)
-  pRxCharacteristic = pService->createCharacteristic(
-                       RX_CHARACTERISTIC_UUID,
-                       BLECharacteristic::PROPERTY_WRITE
-                      );
-  pRxCharacteristic->setCallbacks(new MyCallbacks()); // Define o callback para quando recebermos dados
-
-  // 6. Inicia o serviço
+  BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(RX_CHARACTERISTIC_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pRxCharacteristic->setCallbacks(new MyCallbacks());
   pService->start();
-
-  // 7. Inicia o advertising (anúncio) para que outros dispositivos possam encontrar o ESP32
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID); // Adiciona o UUID do serviço ao anúncio
-  pAdvertising->setScanResponse(true);
-  pAdvertising->setMinPreferred(0x06); 
-  pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
-
   Serial.println("Servidor BLE iniciado e aguardando conexões.");
 }
 
 void loop() {
-  // Apenas executa a lógica se um dispositivo estiver conectado
-  if (deviceConnected) {
-    // Simula uma leitura de sensor.
-    // Função seno para gerar a variação na tensão fake.
-    voltage = 3.3 + 0.5 * sin(millis() / 1000.0);
-
-    Serial.print("Enviando tensão: ");
-    Serial.println(voltage);
-
-    // Envia o novo valor da tensão via notificação BLE
-    // O valor deve ser enviado como um array de bytes.
-    // Um float tem 4 bytes, então enviamos o ponteiro para a variável e o seu tamanho.
-    pTxCharacteristic->setValue((uint8_t*)&voltage, 4);
-    pTxCharacteristic->notify();
-
-    // Aguarda 1 segundo antes de enviar a próxima leitura
-    delay(1000); 
-  }
+  // O loop principal fica vazio pois toda a lógica é baseada nos eventos do BLE
+  delay(2000);
 }
