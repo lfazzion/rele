@@ -9,14 +9,20 @@
 #define A 15
 #define B 2
 #define C 4
+#define RELAY 5
+#define INH 18
+
+#define MEAN 20
+#define res_ref 99.781
 
 ADS1115 ADS(0x48);
 
-const float res_ref = 99.781;
 static char binaryString[3];
-float res;
-float r0[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+float res[2][8] = {0.0};
+float r0[8] = {0.0};
 int value = 0;
+int num = 0;
+bool relay_state = 0;
 
 void setup() {
   Serial.begin(9600);  // Initialize serial communication with 9600 baud rate
@@ -25,7 +31,11 @@ void setup() {
   pinMode(A, OUTPUT);
   pinMode(B, OUTPUT);
   pinMode(C, OUTPUT);
+  pinMode(RELAY, OUTPUT);
+  pinMode(INH, OUTPUT);
 
+  digitalWrite(INH, HIGH);
+  digitalWrite(RELAY, 0);
   ADS.begin();
   ADS.setGain(0);
 }
@@ -39,15 +49,39 @@ float get_res(){
   return (res_ref*volts)/volts_ref;
 }
 
-void calibrate(){
-  for(int j = 0; j<8; j++){
+void action_relay(){
+  digitalWrite(RELAY, !relay_state);
+  relay_state = !relay_state;
+}
+
+void calibrate(int n){
+  digitalWrite(INH, LOW);
+  for(int j = 0; j<n; j++){
     float r0_base = 0.0;
-    for(int i = 0; i<10; i++){
+    for(int i = 0; i<MEAN; i++){
       r0_base += get_res();
     }
-    r0[j] = r0_base/10;
+    r0[j] = r0_base/MEAN;
   }
+  digitalWrite(INH, HIGH);
   Serial.print("Calibração finalizada.");
+}
+
+void read_voltage(int n){
+  digitalWrite(INH, LOW);
+  for(int k=0; k<2; k++){
+    for(int j=0; j<n; j++){
+      multiplx_controler(j);
+      delay(500);
+      res[k][j] = 0.0;
+      for(int i = 0; i<MEAN; i++){
+        res[k][j] += get_res() - r0[j];
+      }
+      res[k][j] = res[k][j]/MEAN;
+    }
+    action_relay();
+  }
+  digitalWrite(INH, HIGH);
 }
 
 void toBinary(int num) {
@@ -74,26 +108,25 @@ void loop() {
     char input = Serial.read();
     switch(input){
       case 'C':
-        calibrate();
+        Serial.println("Entre com a quantidade de terminais");
+        while(Serial.available()==0){}
+        num = Serial.parseInt();
+        calibrate(num);
         break;
       case 'V':
-        for(int j=0; j<6; j++){
-          multiplx_controler(j);
-          delay(500);
-          res = 0;
-          for(int i = 0; i<20; i++){
-            res += get_res() - r0[j];
+        Serial.println("Entre com a quantidade de terminais");
+        while(Serial.available()==0){}
+        num = Serial.parseInt();
+        read_voltage(num);
+        for(int k=0; k<2; k++){
+          for(int i=0; i<num; i++){
+            Serial.println("Resistencia " + String(i) + ":\t" + String(res[k][i], 3));
           }
-          res = res/20;
-  
-          Serial.print("Resistencia ");
-          Serial.print(j);
-          Serial.print(":\t");
-          Serial.println(res, 3);
         }
         break;
       default:
         Serial.println("Opção inválida");
+        break;
     }
   }
 }
