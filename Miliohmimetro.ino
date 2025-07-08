@@ -13,12 +13,10 @@
 ADS1115 ADS(0x48);
 
 const float res_ref = 99.781;
-
 static char binaryString[3];
 float res;
 float r0[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 int value = 0;
-
 
 void setup() {
   Serial.begin(9600);  // Initialize serial communication with 9600 baud rate
@@ -41,7 +39,6 @@ float get_res(){
   return (res_ref*volts)/volts_ref;
 }
 
-
 void calibrate(){
   for(int j = 0; j<8; j++){
     float r0_base = 0.0;
@@ -55,7 +52,7 @@ void calibrate(){
 
 void toBinary(int num) {
   int pos = 0;
-  for (int i = 2; i >= 0; i--) { // Assuming 8-bit integer
+  for (int i = 2; i >= 0; i--) { // Assuming 3-bit integer
     if ((num >> i) & 1) {
       binaryString[pos] = '1';
     } else {
@@ -80,7 +77,7 @@ void loop() {
         calibrate();
         break;
       case 'V':
-        for(int j=0; j<2; j++){
+        for(int j=0; j<6; j++){
           multiplx_controler(j);
           delay(500);
           res = 0;
