@@ -3,9 +3,9 @@
 #include "ADS1X15.h"
 #include <Wire.h>
 
-#define LED_RELAY 2
-#define RELAY 5
-#define BUTTON 4
+#define LED_CONT 4
+#define RELAY 2
+#define BUTTON 15
 
 #define MEAN 20
 #define res_ref 99.781
@@ -22,7 +22,7 @@ void setup() {
   Serial.begin(9600);  // Initialize serial communication with 9600 baud rate
   Wire.begin();        // Initialize I2C communication
 
-  pinMode(LED_RELAY, OUTPUT);
+  pinMode(LED_CONT, OUTPUT);
   pinMode(RELAY, OUTPUT);
   pinMode(BUTTON, INPUT);
 
@@ -66,10 +66,11 @@ void calibrate(int n){
 
 void wait_confirmation(int j){
   Serial.println("Preparado para a próxima leitura do terminal" + String(j) +". Entre com '1' para continuar.");
-  digitalWrite(LED_RELAY, 1);
+  digitalWrite(LED_CONT, 1);
+  // while(digitalRead(BUTTON)==0){}
   while(Serial.available()==0){}
   Serial.read();
-  digitalWrite(LED_RELAY, 0);
+  digitalWrite(LED_CONT, 0);
 }
 
 void read_voltage(int n){
