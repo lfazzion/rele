@@ -1,14 +1,3 @@
-// --- Configuração do Firebase ---
-const firebaseConfig = {
-  apiKey: "AIzaSyBBJWqqig7VM8wio5MNuv_UwF6TRGKK720",
-  authDomain: "jiga-de-teste.firebaseapp.com",
-  databaseURL: "https://jiga-de-teste-default-rtdb.firebaseio.com",
-  projectId: "jiga-de-teste",
-  storageBucket: "jiga-de-teste.firebasestorage.app",
-  messagingSenderId: "908087994475",
-  appId: "1:908087994475:web:feaf5ae804b0c2838a692e",
-};
-
 // --- Definições de UUIDs do Bluetooth ---
 const BLE_SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const BLE_RECEIVE_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
@@ -16,202 +5,156 @@ const BLE_SEND_CHARACTERISTIC_UUID = "a4d23253-2778-436c-9c23-2c1b50d87635";
 
 // --- Referências aos Elementos da UI ---
 const connectButton = document.getElementById("connect-button");
-const calibrateButton = document.getElementById("calibrate-button");
-const verifyButton = document.getElementById("verify-button");
 const statusCircle = document.getElementById("status-circle");
 const statusText = document.getElementById("status-text");
-const res1Display = document.getElementById("res1-display");
-const res2Display = document.getElementById("res2-display");
-const avgDisplay = document.getElementById("avg-display");
-const historyList = document.getElementById("history-list");
+const logConsole = document.getElementById("log-console");
 
-// Variáveis globais
+// Seções interativas
+const commandSection = document.getElementById("command-section");
+const interactionSection = document.getElementById("interaction-section");
+const promptText = document.getElementById("prompt-text");
+const inputArea = document.getElementById("input-area");
+const responseInput = document.getElementById("response-input");
+const sendResponseButton = document.getElementById("send-response-button");
+const calibrateButton = document.getElementById("calibrate-button");
+const verifyButton = document.getElementById("verify-button");
+
+// REMOVIDO: Referências ao botão de confirmação, pois ele não existe mais
+// const confirmationArea = document.getElementById("confirmation-area");
+// const confirmButton = document.getElementById("confirm-button");
+
+// --- Variáveis Globais ---
 let bleDevice = null;
 let sendCharacteristic = null;
-let db = null;
-
-// --- Inicialização e Funções do Firebase ---
-try {
-  firebase.initializeApp(firebaseConfig);
-  db = firebase.database();
-  console.log("Firebase inicializado.");
-  fetchHistoryFromFirebase(); // Busca o histórico ao carregar
-} catch (e) {
-  console.error("Erro ao inicializar o Firebase.", e);
-}
-
-function saveVerificationResults(r1, r2, media) {
-  if (!db) return;
-  const dataToSave = {
-    timestamp: new Date().toISOString(),
-    resistencia1: r1,
-    resistencia2: r2,
-    media: media,
-  };
-  db.ref("verificacoes").push(dataToSave);
-}
-
-function fetchHistoryFromFirebase() {
-  if (!db) return;
-  const historyRef = db.ref("verificacoes").limitToLast(10);
-  historyRef.on("value", (snapshot) => {
-    historyList.innerHTML = "";
-    if (!snapshot.exists()) {
-      historyList.innerHTML = "<li>Nenhum histórico encontrado.</li>";
-      return;
-    }
-    snapshot.forEach((childSnapshot) => {
-      const data = childSnapshot.val();
-      const date = new Date(data.timestamp).toLocaleString("pt-BR");
-      const listItem = document.createElement("li");
-      listItem.textContent = `[${date}] R1: ${data.resistencia1.toFixed(3)}Ω, R2: ${data.resistencia2.toFixed(3)}Ω, Média: ${data.media.toFixed(3)}Ω`;
-      historyList.prepend(listItem);
-    });
-  });
-}
 
 // --- Funções de Controle da UI ---
 function updateConnectionStatus(status) {
-  statusCircle.className = "circle";
-  let isConnected = false;
-  switch (status) {
-    case "disconnected":
-      statusText.textContent = "Desconectado";
-      statusCircle.classList.add("disconnected");
-      break;
-    case "connecting":
-      statusText.textContent = "Conectando...";
-      statusCircle.classList.add("connecting");
-      break;
-    case "connected":
-      statusText.textContent = "Conectado";
-      statusCircle.classList.add("connected");
-      isConnected = true;
-      break;
-  }
-  connectButton.disabled = status === "connecting";
-  calibrateButton.disabled = !isConnected;
-  verifyButton.disabled = !isConnected;
+    statusCircle.className = "circle";
+    switch (status) {
+        case "disconnected":
+            statusText.textContent = "Desconectado";
+            statusCircle.classList.add("disconnected");
+            commandSection.classList.add("hidden");
+            interactionSection.classList.add("hidden");
+            break;
+        case "connecting":
+            statusText.textContent = "Conectando...";
+            statusCircle.classList.add("connecting");
+            break;
+        case "connected":
+            statusText.textContent = "Conectado";
+            statusCircle.classList.add("connected");
+            break;
+    }
 }
 
-function setButtonsLoading(isLoading) {
-  const buttons = [calibrateButton, verifyButton];
-  buttons.forEach((button) => {
-    button.disabled = isLoading;
-    if (isLoading) {
-      button.classList.add("loading");
-    } else {
-      button.classList.remove("loading");
+// SIMPLIFICADO: A função agora só tem dois estados de UI a gerenciar
+function showUiState(state) {
+    // Esconde tudo primeiro
+    commandSection.classList.add("hidden");
+    interactionSection.classList.add("hidden");
+    inputArea.classList.add("hidden");
+
+    switch (state) {
+        case "idle": // Esperando comando C ou V
+            commandSection.classList.remove("hidden");
+            break;
+        case "awaiting_number": // ESP pediu "Entre com a quantidade..."
+            interactionSection.classList.remove("hidden");
+            inputArea.classList.remove("hidden");
+            break;
+        // REMOVIDO: o estado 'awaiting_confirmation' não é mais necessário
     }
-  });
-  // Re-habilita os botões apenas se estiver conectado
-  if (!isLoading && bleDevice && bleDevice.gatt.connected) {
-    calibrateButton.disabled = false;
-    verifyButton.disabled = false;
-  }
+}
+
+function appendToLog(text) {
+    logConsole.innerHTML += `> ${text}\n`;
+    logConsole.scrollTop = logConsole.scrollHeight; // Auto-scroll
 }
 
 // --- Funções do Web Bluetooth ---
 
-// ALTERADO: Lida com dados e atualiza a nova UI
+// ALTERADO: A lógica de confirmação agora é automática
 function handleDataReceived(event) {
-  const receivedText = new TextDecoder().decode(event.target.value);
-  console.log(`Recebido: ${receivedText}`);
-  setButtonsLoading(false); // Para o feedback de carregamento
+    const receivedText = new TextDecoder().decode(event.target.value).trim();
+    appendToLog(receivedText);
 
-  if (receivedText.includes("Resistencia")) {
-    const lines = receivedText.trim().split("\n");
-    const values = [];
-    lines.forEach((line) => {
-      const value = parseFloat(line.split(":")[1].trim());
-      if (!isNaN(value)) {
-        values.push(value);
-      }
-    });
-
-    if (values.length >= 2) {
-      const [r1, r2] = values;
-      const media = (r1 + r2) / 2;
-      res1Display.textContent = `${r1.toFixed(3)} Ω`;
-      res2Display.textContent = `${r2.toFixed(3)} Ω`;
-      avgDisplay.textContent = `${media.toFixed(3)} Ω`;
-      saveVerificationResults(r1, r2, media);
+    if (receivedText.includes("Entre com a quantidade de terminais")) {
+        promptText.textContent = "Digite o número de terminais:";
+        showUiState("awaiting_number");
+    } else if (receivedText.includes("Confirme para continuar")) {
+        // A MÁGICA ACONTECE AQUI!
+        // Ao receber a mensagem, a confirmação é enviada automaticamente.
+        appendToLog("Confirmação automática enviada.");
+        sendCommand('1'); 
+    } else if (receivedText.includes("finalizada") || receivedText.includes("pronto")) {
+        promptText.textContent = "Aguardando comando...";
+        showUiState("idle");
     }
-  } else {
-    // Mostra outras mensagens (como "Calibração finalizada") em um alerta
-    alert(receivedText);
-  }
 }
 
-// CORRIGIDO: Lida com a desconexão e limpa o estado
 function onDisconnected() {
-  console.log("Dispositivo desconectado.");
-  updateConnectionStatus("disconnected");
-  // Limpa os displays
-  res1Display.textContent = "-- Ω";
-  res2Display.textContent = "-- Ω";
-  avgDisplay.textContent = "-- Ω";
-  // Limpa a referência do dispositivo para forçar uma nova busca
-  bleDevice = null;
-  sendCharacteristic = null;
+    updateConnectionStatus("disconnected");
+    bleDevice = null;
+    sendCharacteristic = null;
 }
 
 async function connectToESP32() {
-  // A lógica de reconexão é implicitamente corrigida ao zerar bleDevice em onDisconnected
-  try {
-    updateConnectionStatus("connecting");
-    bleDevice = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [BLE_SERVICE_UUID] }],
-      optionalServices: [BLE_SERVICE_UUID],
-    });
+    try {
+        updateConnectionStatus("connecting");
+        bleDevice = await navigator.bluetooth.requestDevice({
+            filters: [{ name: "Jiga de Teste Interativa" }],
+            optionalServices: [BLE_SERVICE_UUID],
+        });
 
-    bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
-    const server = await bleDevice.gatt.connect();
-    const service = await server.getPrimaryService(BLE_SERVICE_UUID);
-    const receiveCharacteristic = await service.getCharacteristic(
-      BLE_RECEIVE_CHARACTERISTIC_UUID,
-    );
-    await receiveCharacteristic.startNotifications();
-    receiveCharacteristic.addEventListener(
-      "characteristicvaluechanged",
-      handleDataReceived,
-    );
-    sendCharacteristic = await service.getCharacteristic(
-      BLE_SEND_CHARACTERISTIC_UUID,
-    );
-    updateConnectionStatus("connected");
-  } catch (error) {
-    console.error("Erro na conexão Bluetooth:", error);
-    alert(`Erro: ${error.message}`);
-    updateConnectionStatus("disconnected");
-  }
+        bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
+        const server = await bleDevice.gatt.connect();
+        const service = await server.getPrimaryService(BLE_SERVICE_UUID);
+        const receiveCharacteristic = await service.getCharacteristic(BLE_SEND_CHARACTERISTIC_UUID);
+        
+        await receiveCharacteristic.startNotifications();
+        receiveCharacteristic.addEventListener("characteristicvaluechanged", handleDataReceived);
+        
+        sendCharacteristic = await service.getCharacteristic(BLE_RECEIVE_CHARACTERISTIC_UUID);
+        updateConnectionStatus("connected");
+        showUiState("idle"); 
+    } catch (error) {
+        console.error("Erro na conexão Bluetooth:", error);
+        updateConnectionStatus("disconnected");
+    }
 }
 
-// ALTERADO: Envia comando com feedback visual
 async function sendCommand(command) {
-  if (!sendCharacteristic) return;
-  try {
-    setButtonsLoading(true);
-    const encoder = new TextEncoder();
-    await sendCharacteristic.writeValue(encoder.encode(command.toString()));
-  } catch (error) {
-    console.error("Erro ao enviar comando:", error);
-    alert(`Erro ao enviar comando: ${error.message}`);
-    setButtonsLoading(false);
-  }
+    if (!sendCharacteristic) return;
+    try {
+        const encoder = new TextEncoder();
+        await sendCharacteristic.writeValue(encoder.encode(command.toString()));
+        appendToLog(`Enviado: ${command}`);
+    } catch (error) {
+        console.error("Erro ao enviar comando:", error);
+    }
 }
 
 // --- Listeners de Eventos ---
 connectButton.addEventListener("click", () => {
-  // Se estiver conectado e o botão for clicado, ele desconecta.
-  if (bleDevice && bleDevice.gatt.connected) {
-    bleDevice.gatt.disconnect();
-  } else {
-    connectToESP32();
-  }
+    bleDevice && bleDevice.gatt.connected ? bleDevice.gatt.disconnect() : connectToESP32();
 });
-calibrateButton.addEventListener("click", () => sendCommand(1));
-verifyButton.addEventListener("click", () => sendCommand(2));
 
-// Estado inicial da UI
+calibrateButton.addEventListener("click", () => sendCommand('C'));
+verifyButton.addEventListener("click", () => sendCommand('V'));
+
+sendResponseButton.addEventListener("click", () => {
+    const number = responseInput.value;
+    if (number) {
+        sendCommand(number);
+        responseInput.value = "";
+        promptText.textContent = "Processando...";
+        interactionSection.classList.add("hidden"); 
+    }
+});
+
+// REMOVIDO: O listener do botão de confirmação não é mais necessário.
+// confirmButton.addEventListener("click", ...);
+
+// --- Estado Inicial ---
 updateConnectionStatus("disconnected");

@@ -8,153 +8,23 @@
     --disconnected-color: #e74c3c;
     --connecting-color: #f39c12;
     --connected-color: #2ecc71;
+    --console-bg: #2b2b2b;
+    --console-text: #f0f0f0;
 }
-
-body {
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-        sans-serif;
-    background-color: var(--bg-color);
-    color: var(--text-color);
-    margin: 0;
-    padding: 20px;
-}
-
-.container {
-    max-width: 800px;
-    margin: auto;
-    background-color: var(--card-bg-color);
-    padding: 2rem;
-    border-radius: 10px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-}
-
-header {
-    text-align: center;
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 1.5rem;
-    margin-bottom: 1.5rem;
-}
-
-.status-indicator {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 1rem;
-    font-size: 1.2rem;
-}
-
-.circle {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-}
-.circle.disconnected {
-    background-color: var(--disconnected-color);
-}
-.circle.connecting {
-    background-color: var(--connecting-color);
-}
-.circle.connected {
-    background-color: var(--connected-color);
-}
-
-.btn {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 12px 20px;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 1rem;
-    transition: all 0.3s ease;
-    position: relative;
-}
-
-.btn:hover {
-    background-color: var(--primary-hover-color);
-}
-.btn:disabled {
-    background-color: #a0a0a0;
-    cursor: not-allowed;
-}
-
-/* NOVO: Feedback visual de carregamento */
-.btn.loading::after {
-    content: "";
-    position: absolute;
-    width: 16px;
-    height: 16px;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    margin: auto;
-    border: 4px solid transparent;
-    border-top-color: #ffffff;
-    border-radius: 50%;
-    animation: -button-loading-spinner 1s ease infinite;
-}
-.btn.loading {
-    color: transparent;
-    cursor: wait;
-}
-@keyframes -button-loading-spinner {
-    from {
-        transform: rotate(0turn);
-    }
-    to {
-        transform: rotate(1turn);
-    }
-}
-
-main > section {
-    background-color: #fafafa;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-}
-
-h2 {
-    margin-top: 0;
-    color: var(--primary-color);
-}
-
-.data-section {
-    display: flex;
-    justify-content: space-around;
-    gap: 1rem;
-    text-align: center;
-}
-
-.data-card p {
-    font-size: 2.5rem;
-    font-weight: bold;
-    color: #000;
-    margin: 0.5rem 0 0 0;
-}
-
-.actions-section {
-    display: flex;
-    justify-content: center;
-    gap: 1rem;
-}
-
-#history-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    max-height: 200px;
-    overflow-y: auto;
-}
-
-#history-list li {
-    padding: 0.8rem;
-    border-bottom: 1px solid #f0f0f0;
-}
-
-#history-list li:last-child {
-    border-bottom: none;
-}
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; box-sizing: border-box; }
+.container { max-width: 800px; margin: auto; background-color: var(--card-bg-color); padding: 2rem; border-radius: 10px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1); }
+header { text-align: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1.5rem; margin-bottom: 1.5rem; }
+.status-indicator { display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 1rem; font-size: 1.2rem; }
+.circle { width: 20px; height: 20px; border-radius: 50%; }
+.circle.disconnected { background-color: var(--disconnected-color); }
+.circle.connecting { background-color: var(--connecting-color); }
+.circle.connected { background-color: var(--connected-color); }
+.btn { background-color: var(--primary-color); color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; font-size: 1rem; transition: background-color 0.3s ease; }
+.btn:hover:not(:disabled) { background-color: var(--primary-hover-color); }
+.btn:disabled { background-color: #a0a0a0; cursor: not-allowed; }
+main > section { background-color: #fafafa; border: 1px solid var(--border-color); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; text-align: center; }
+h2 { margin-top: 0; color: var(--primary-color); }
+.actions-section, #interaction-section div { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
+#response-input { padding: 10px; font-size: 1rem; border-radius: 5px; border: 1px solid var(--border-color); }
+.log-section .console { background-color: var(--console-bg); color: var(--console-text); font-family: "Courier New", Courier, monospace; padding: 1rem; border-radius: 5px; height: 200px; overflow-y: auto; font-size: 0.9rem; text-align: left; white-space: pre-wrap; }
+.hidden { display: none; }

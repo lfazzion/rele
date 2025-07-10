@@ -1,65 +1,50 @@
 <!doctype html>
 <html lang="pt-br">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>ESP32 & ADS1115 Interface</title>
-        <link rel="stylesheet" href="style.css" />
-    </head>
-    <body>
-        <div class="container">
-            <header>
-                <h1>Interface de Medição de Resistência</h1>
-                <div class="status-indicator">
-                    <div id="status-circle" class="circle disconnected"></div>
-                    <span id="status-text">Desconectado</span>
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ESP32 - Terminal Interativo</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Terminal de Controle Interativo</h1>
+            <div class="status-indicator">
+                <div id="status-circle" class="circle disconnected"></div>
+                <span id="status-text">Desconectado</span>
+            </div>
+            <button id="connect-button" class="btn">Conectar ao ESP32</button>
+        </header>
+
+        <main>
+            <!-- ÁREA DE COMANDOS INICIAIS -->
+            <section id="command-section" class="actions-section hidden">
+                <h2>Comandos Principais</h2>
+                <button id="calibrate-button" class="btn action-btn">Calibrar ('C')</button>
+                <button id="verify-button" class="btn action-btn">Verificar ('V')</button>
+            </section>
+
+            <!-- ÁREA DE INTERAÇÃO DINÂMICA -->
+            <section id="interaction-section" class="hidden">
+                <h2 id="prompt-text">Aguardando...</h2>
+                <div id="input-area">
+                    <input type="number" id="response-input" placeholder="Digite o número aqui" />
+                    <button id="send-response-button" class="btn">Enviar</button>
                 </div>
-                <button id="connect-button" class="btn">
-                    Conectar ao ESP32
-                </button>
-            </header>
-
-            <main>
-                <section class="data-section">
-                    <div class="data-card">
-                        <h2>Resistência 1</h2>
-                        <p id="res1-display">-- Ω</p>
-                    </div>
-                    <div class="data-card">
-                        <h2>Resistência 2</h2>
-                        <p id="res2-display">-- Ω</p>
-                    </div>
-                    <div class="data-card">
-                        <h2>Média</h2>
-                        <p id="avg-display">-- Ω</p>
-                    </div>
-                </section>
-
-                <section class="actions-section">
-                    <h2>Comandos</h2>
-                    <button
-                        id="calibrate-button"
-                        class="btn action-btn"
-                        disabled
-                    >
-                        Iniciar Calibração
-                    </button>
-                    <button id="verify-button" class="btn action-btn" disabled>
-                        Verificar Resistências
-                    </button>
-                </section>
-
-                <section class="history-section">
-                    <h2>Histórico de Leituras (do Firebase)</h2>
-                    <ul id="history-list">
-                        <li>Aguardando conexão com o Firebase...</li>
-                    </ul>
-                </section>
-            </main>
-        </div>
-
-        <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-        <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-        <script src="script.js"></script>
-    </body>
+                <!-- O BOTÃO DE CONFIRMAÇÃO FOI REMOVIDO DAQUI -->
+            </section>
+            
+            <!-- ÁREA DE LOGS / RESULTADOS -->
+            <section class="log-section">
+                <h2>Console de Saída</h2>
+                <div id="log-console" class="console">
+                    Aguardando conexão...
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
 </html>
