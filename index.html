@@ -1,50 +1,217 @@
 <!doctype html>
 <html lang="pt-br">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ESP32 - Terminal Interativo</title>
-    <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Terminal de Controle Interativo</h1>
-            <div class="status-indicator">
-                <div id="status-circle" class="circle disconnected"></div>
-                <span id="status-text">Desconectado</span>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Jiga de Teste Interativa - ESP32</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="style.css" />
+        <link
+            rel="icon"
+            href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>"
+        />
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <div class="header-left">
+                    <h1>Teste de Relé</h1>
+                    <div class="status-indicator">
+                        <div
+                            id="status-circle"
+                            class="circle disconnected"
+                        ></div>
+                        <span id="status-text">Desconectado</span>
+                    </div>
+                </div>
+
+                <div class="header-right">
+                    <div class="theme-switcher">
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            fill="currentColor"
+                            viewBox="0 0 256 256"
+                        >
+                            <path
+                                d="M120,40V24a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm8,200V216a8,8,0,0,0-16,0v16a8,8,0,0,0,16,0Zm80-104H224a8,8,0,0,0,0-16H208a8,8,0,0,0,0,16Zm-58.23,73.77a8,8,0,0,0,5.66-2.34l11.31-11.32a8,8,0,0,0-11.31-11.31L144,179.66a8,8,0,0,0,5.65,13.66ZM195.66,60.34a8,8,0,0,0-11.32,0L173,71.66a8,8,0,0,0,11.31,11.31l11.32-11.31A8,8,0,0,0,195.66,60.34ZM60.34,195.66a8,8,0,0,0,0-11.32L49,173a8,8,0,0,0-11.31,11.31l11.32,11.31A8,8,0,0,0,60.34,195.66ZM48,136H32a8,8,0,0,0,0,16H48a8,8,0,0,0,0-16Zm33.66-64.34L70.34,60.34a8,8,0,0,0-11.32,11.32L70.34,83a8,8,0,0,0,11.32-11.32ZM128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z"
+                            ></path>
+                        </svg>
+                        <label class="switch">
+                            <input type="checkbox" id="theme-toggle-checkbox" />
+                            <span class="slider"></span>
+                        </label>
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            fill="currentColor"
+                            viewBox="0 0 256 256"
+                        >
+                            <path
+                                d="M224.23,145.77a95.84,95.84,0,0,1-57-21.45,64,64,0,0,0-82.42,82.42,95.84,95.84,0,0,1,21.45,57,8,8,0,0,0,15.86.14,80.13,80.13,0,0,0,102-102,8,8,0,0,0-.14-15.86A95.42,95.42,0,0,1,224.23,145.77ZM176,128a48,48,0,1,1-48-48A48.05,48.05,0,0,1,176,128Z"
+                            ></path>
+                        </svg>
+                    </div>
+
+                    <button
+                        id="view-history-button"
+                        class="btn btn-secondary hidden"
+                    >
+                        Ver Histórico
+                    </button>
+                    <button id="connect-button" class="btn btn-primary">
+                        Conectar
+                    </button>
+                </div>
+            </header>
+
+            <main id="app-content" class="hidden">
+                <div id="setup-screen">
+                    <h2>Parâmetros do Teste</h2>
+                    <div class="card-deck">
+                        <div class="card">
+                            <div class="card-icon">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="48"
+                                    height="48"
+                                    fill="currentColor"
+                                    viewBox="0 0 256 256"
+                                >
+                                    <path
+                                        d="M228,80H163.7a48.14,48.14,0,0,0-91.4,0H28a12,12,0,0,0-12,12V188a12,12,0,0,0,12,12H228a12,12,0,0,0,12-12V92A12,12,0,0,0,228,80ZM118,76a36,36,0,1,1,20,0Zm112,112H28a4,4,0,0,1-4-4V92a4,4,0,0,1,4-4H72.24a59.61,59.61,0,0,1,111.52,0H228a4,4,0,0,1,4,4Z"
+                                    ></path>
+                                </svg>
+                            </div>
+                            <h3>Calibração</h3>
+                            <p>
+                                Realiza a leitura de referência para cada
+                                terminal.
+                            </p>
+                            <div class="input-group">
+                                <label for="calibrate-terminals"
+                                    >Nº de Terminais:</label
+                                >
+                                <input
+                                    type="number"
+                                    id="calibrate-terminals"
+                                    value="8"
+                                    min="1"
+                                    max="8"
+                                />
+                            </div>
+                            <button id="start-calibration-button" class="btn">
+                                Iniciar Calibração
+                            </button>
+                        </div>
+                        <div class="card">
+                            <div class="card-icon">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="48"
+                                    height="48"
+                                    fill="currentColor"
+                                    viewBox="0 0 256 256"
+                                >
+                                    <path
+                                        d="M168,20a8,8,0,0,0-8.54,7.11l-1-17A8,8,0,0,0,150,4a12,12,0,0,0-13.6-1.55L45.47,53.33A12,12,0,0,0,44,64.88l68.1,117.95a12,12,0,0,0,10.45,6.17h.17A12,12,0,0,0,134,184.45l24-41.57,32.33,32.34A8,8,0,0,0,200,172V56a8,8,0,0,0-8-8h-8a8,8,0,0,0,0,16h2.34l-25.67,25.67a8,8,0,0,0-1.89,8.54l16.1,27.88-25-43.27a8,8,0,0,0-13.86,0l-63-109.2L144.38,13.8A11.88,11.88,0,0,0,146,12a12,12,0,0,0,12-12,8,8,0,0,0-16,0,4,4,0,0,1-8,0,8,8,0,0,0-8-8Zm21.31,142.66L164,115.31l32-32V160ZM118,175.05,53.88,65.88l83.18-43.2Z"
+                                    ></path>
+                                </svg>
+                            </div>
+                            <h3>Verificação</h3>
+                            <p>
+                                Mede a resistência e compara com a calibração.
+                            </p>
+                            <div class="input-group">
+                                <label for="verify-terminals"
+                                    >Nº de Terminais:</label
+                                >
+                                <input
+                                    type="number"
+                                    id="verify-terminals"
+                                    value="8"
+                                    min="1"
+                                    max="8"
+                                />
+                            </div>
+                            <button id="start-verification-button" class="btn">
+                                Iniciar Verificação
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="progress-screen" class="hidden">
+                    <h2 id="progress-title">Executando...</h2>
+                    <p id="progress-status-text">
+                        Aguardando início do processo...
+                    </p>
+                    <div class="progress-bar-container">
+                        <div id="progress-bar" class="progress-bar"></div>
+                    </div>
+                    <div
+                        id="step-indicators"
+                        class="step-indicators-container"
+                    ></div>
+
+                    <div id="action-notification" class="notification hidden">
+                        <div class="notification-icon">👇</div>
+                        <div class="notification-content">
+                            <h3>Ação Física Necessária</h3>
+                            <p>
+                                Pressione o <strong>botão físico</strong> na
+                                jiga para continuar.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="results-screen" class="hidden">
+                    <h2>Resultados da Verificação</h2>
+                    <div id="results-table-container"></div>
+                    <button id="run-new-test-button" class="btn">
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            fill="currentColor"
+                            viewBox="0 0 256 256"
+                        >
+                            <path
+                                d="M224,128a96,96,0,0,1-192,0,8,8,0,0,1,16,0,80,80,0,1,0,80-80,8,8,0,0,1,0-16,96,96,0,0,1,96,96Zm-40-8a8,8,0,0,0-8,8,24,24,0,0,0,48,0,8,8,0,0,0-8-8,8,8,0,0,0-8,8,8,8,0,0,1-16,0,8,8,0,0,0-8-8Z"
+                            ></path>
+                        </svg>
+                        Realizar Novo Teste
+                    </button>
+                </div>
+
+                <div id="history-screen" class="hidden">
+                    <h2>Histórico de Verificações</h2>
+                    <div id="history-container"></div>
+                    <button id="back-to-setup-button" class="btn">
+                        Voltar
+                    </button>
+                </div>
+            </main>
+
+            <div id="welcome-message">
+                <p>Por favor, conecte-se ao dispositivo ESP32 para começar.</p>
             </div>
-            <button id="connect-button" class="btn">Conectar ao ESP32</button>
-        </header>
+        </div>
 
-        <main>
-            <!-- ÁREA DE COMANDOS INICIAIS -->
-            <section id="command-section" class="actions-section hidden">
-                <h2>Comandos Principais</h2>
-                <button id="calibrate-button" class="btn action-btn">Calibrar ('C')</button>
-                <button id="verify-button" class="btn action-btn">Verificar ('V')</button>
-            </section>
+        <footer>
+            <p>Desenvolvido por Lowell Fazzion e Anderson Ferreira © 2025</p>
+        </footer>
 
-            <!-- ÁREA DE INTERAÇÃO DINÂMICA -->
-            <section id="interaction-section" class="hidden">
-                <h2 id="prompt-text">Aguardando...</h2>
-                <div id="input-area">
-                    <input type="number" id="response-input" placeholder="Digite o número aqui" />
-                    <button id="send-response-button" class="btn">Enviar</button>
-                </div>
-                <!-- O BOTÃO DE CONFIRMAÇÃO FOI REMOVIDO DAQUI -->
-            </section>
-            
-            <!-- ÁREA DE LOGS / RESULTADOS -->
-            <section class="log-section">
-                <h2>Console de Saída</h2>
-                <div id="log-console" class="console">
-                    Aguardando conexão...
-                </div>
-            </section>
-        </main>
-    </div>
-    
-    <script src="script.js"></script>
-</body>
+        <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+        <script src="script.js"></script>
+    </body>
 </html>

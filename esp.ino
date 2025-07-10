@@ -28,7 +28,7 @@ bool deviceConnected = false;
 
 // Usando String do Arduino como nosso único tipo de string.
 volatile bool hasNewData = false;
-String receivedData = ""; 
+String receivedData = "";
 BLECharacteristic *pSendCharacteristic;
 
 // --- Funções ---
@@ -36,7 +36,7 @@ BLECharacteristic *pSendCharacteristic;
 // ÚNICA VERSÃO de sendBleMessage, aceita String e não causa ambiguidade.
 void sendBleMessage(const String& message) {
     if (deviceConnected) {
-        pSendCharacteristic->setValue(message); 
+        pSendCharacteristic->setValue(message);
         pSendCharacteristic->notify();
         Serial.println("Enviado via BLE: " + message);
     }
@@ -140,6 +140,7 @@ void setup() {
     ADS.setMode(1);
 
     BLEDevice::init("Jiga de Teste Interativa");
+    BLEDevice::setPower(ESP_PWR_LVL_P9);
     BLEServer *pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());
     BLEService *pService = pServer->createService(BLE_SERVICE_UUID);
