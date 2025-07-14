@@ -9,6 +9,7 @@
 
 #define MEAN 20
 #define res_ref 99.781
+#define PERIOD 100 
 
 ADS1115 ADS(0x48);
 
@@ -28,18 +29,26 @@ void setup() {
 
   digitalWrite(RELAY, 0);
   ADS.begin();
-  ADS.setGain(0);
-  ADS.setDataRate(4);    //  0 = slow   4 = medium   7 = fast
-  ADS.setMode(1);
+  ADS.setGain(1);
 }
 
 float get_res(){
   if(ADS.isConnected()){
-    int16_t val_01 = ADS.readADC_Differential_0_1();
-    int16_t val_13 = ADS.readADC_Differential_1_3();
+    ADS.setDataRate(0);    //  0 = slow   4 = medium   7 = fast
+    ADS.setMode(1);
+    do{
+      int16_t val_01 = ADS.readADC_Differential_0_1();
+      int16_t val_13 = ADS.readADC_Differential_1_3();
+      unsigned long startMillis = millis();
+      while(millis()-startMillis<PERIOD){}
+    }while( ( val_01!=ADS.readADC_Differential_0_1()  ) &&
+            ( val_13!=ADS.readADC_Differential_1_3()  )   )
+    
+    val_01 = ADS.readADC_Differential_0_1();
+    val_13 = ADS.readADC_Differential_1_3();
     float volts_ref = ADS.toVoltage(val_01);
-    float volts = ADS.toVoltage(val_13);  
-  
+    float volts = ADS.toVoltage(val_13);
+
     return (res_ref*volts)/volts_ref;
   }else{
     Serial.println("ADS não encontrado"); 
@@ -48,8 +57,25 @@ float get_res(){
 }
 
 void action_relay(){
-  digitalWrite(RELAY, !relay_state);
   relay_state = !relay_state;
+  digitalWrite(RELAY, !relay_state);
+}
+
+unsigned long time_action_relay(){
+  ADS.setDataRate(7);    //  0 = slow   4 = medium   7 = fast
+  ADS.setMode(0);
+  int16_t val_13 = ADS.readADC_Differential_1_3();
+  unsigned long startRelay = millis();
+  action_relay();
+  while(true){
+    int16_t val_13_plus = ADS.readADC_Differential_1_3();
+    if(abs(val_13 - val_13_plus) > val_13*0.5){
+      unsigned long endRelay = millis();
+      break;
+    }
+  }
+  action_relay();
+  return endRelay - startRelay
 }
 
 void calibrate(int n){
@@ -67,9 +93,7 @@ void calibrate(int n){
 void wait_confirmation(int j){
   Serial.println("Preparado para a próxima leitura do terminal" + String(j) +". Entre com '1' para continuar.");
   digitalWrite(LED_CONT, 1);
-  // while(digitalRead(BUTTON)==0){}
-  while(Serial.available()==0){}
-  Serial.read();
+  while(digitalRead(BUTTON)==0){}
   digitalWrite(LED_CONT, 0);
 }
 
