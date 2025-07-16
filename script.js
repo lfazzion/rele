@@ -64,8 +64,6 @@ document.addEventListener("DOMContentLoaded", () => {
         globalAlert: document.getElementById("global-alert"),
         alertMessage: document.getElementById("alert-message"),
         alertActions: document.getElementById("alert-actions"),
-        debugLogContainer: document.getElementById("debug-log-container"),
-        debugLog: document.getElementById("debug-log"),
     };
 
     // --- Estado da Aplicação ---
@@ -161,7 +159,7 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             updateConnectionStatus("connecting");
             bleDevice = await navigator.bluetooth.requestDevice({
-                filters: [{ name: "Jiga de Teste Pro" }],
+                filters: [{ name: "Jiga - Bluetooth Esp32" }],
                 optionalServices: [BLE_SERVICE_UUID],
             });
             bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
@@ -192,8 +190,6 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         const commandString = JSON.stringify(json);
-        ui.debugLog.textContent += `[${new Date().toLocaleTimeString()}] TX: ${commandString}\n`;
-        ui.debugLog.scrollTop = ui.debugLog.scrollHeight;
         try {
             await sendCharacteristic.writeValueWithoutResponse(new TextEncoder().encode(commandString));
         } catch (error) {
@@ -215,22 +211,41 @@ document.addEventListener("DOMContentLoaded", () => {
      */
     function handleDataReceived(event) {
         const receivedText = new TextDecoder().decode(event.target.value);
-        ui.debugLog.textContent += `[${new Date().toLocaleTimeString()}] RX: ${receivedText}\n`;
-        ui.debugLog.scrollTop = ui.debugLog.scrollHeight;
 
         try {
             const json = JSON.parse(receivedText);
 
             switch (json.status) {
                 case "test_init": {
-                    // Inicializa todos os indicadores em vermelho
+                    // Inicializa todos os indicadores baseado no totalTests do ESP32
                     const totalTests = json.totalTests;
-                    const numPairs = state.currentModule.quantidadePares;
-                    const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
+                    const numContatos = state.currentModule.quantidadePares;
                     
-                    indicators.forEach(indicator => {
-                        indicator.className = "test-indicator status-pending";
-                    });
+                    // Limpa e cria a quantidade correta de indicadores
+                    ui.testIndicatorsContainer.innerHTML = "";
+                    
+                    if (numContatos === 1) {
+                        // Caso especial: 1 contato tem 2 testes
+                        ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">COM-N# Des</div>`;
+                        ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">COM-N# Ene</div>`;
+                    } else {
+                        // Para múltiplos contatos: primeiro todos desenergizados, depois todos energizados
+                        // Alterna entre NF e NA baseado no índice
+                        for (let i = 0; i < numContatos; i++) {
+                            const isNF = (i % 2 === 0);  // Par = NF, Ímpar = NA
+                            const tipoContato = isNF ? "NF" : "NA";
+                            const numeroContato = Math.floor(i / 2) + 1;
+                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">${tipoContato}${numeroContato} Des</div>`;
+                        }
+                        // Fase 2: Energizado - mesma alternância
+                        for (let i = 0; i < numContatos; i++) {
+                            const isNF = (i % 2 === 0);  // Par = NF, Ímpar = NA
+                            const tipoContato = isNF ? "NF" : "NA";
+                            const numeroContato = Math.floor(i / 2) + 1;
+                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">${tipoContato}${numeroContato} Ene</div>`;
+                        }
+                    }
+                    
                     break;
                 }
 
@@ -285,19 +300,52 @@ document.addEventListener("DOMContentLoaded", () => {
                     const resultData = { 
                         par: json.par, 
                         estado: json.estado, 
-                        resistencia: json.resistencia 
+                        resistencia: json.resistencia,
+                        esperado: json.esperado,
+                        passou: json.passou
                     };
                     state.testResults.push(resultData);
 
                     // Atualiza a tabela de resultados
-                    const rowId = `result-row-${resultData.par.replace(" ", "-")}`;
+                    let rowId;
+                    if (json.par.includes("COM-N#")) {
+                        // Caso especial de 1 par
+                        rowId = `result-row-COM-N#-1-${json.estado}`;
+                    } else {
+                        // Caso normal - O Arduino envia formato "NF 1" ou "NA 1"
+                        // Converte para "result-row-NF-1-REPOUSO" ou "result-row-NA-1-ENERGIZADO"
+                        const parParts = json.par.split(" ");
+                        const tipo = parParts[0];  // "NF" ou "NA"
+                        const numero = parParts[1];  // "1", "2", etc.
+                        rowId = `result-row-${tipo}-${numero}-${json.estado}`;
+                    }
+                    
                     const row = document.getElementById(rowId);
                     if (row) {
                         const resistanceCell = row.cells[2];
-                        resistanceCell.innerHTML = resultData.resistencia;
-                        if (resultData.resistencia === "ABERTO") {
-                            resistanceCell.style.color = "var(--danger-color)";
-                            resistanceCell.style.fontWeight = "bold";
+                        const resultCell = row.cells[4];
+                        
+                        resistanceCell.textContent = resultData.resistencia;
+                        
+                        if (resultData.esperado === "VARIÁVEL") {
+                            // Caso especial: apenas mostra o valor medido
+                            resultCell.textContent = "MEDIDO";
+                            resultCell.style.color = "var(--primary-color)";
+                            resultCell.style.fontWeight = "bold";
+                        } else {
+                            // Caso normal: mostra se passou ou falhou
+                            resultCell.textContent = resultData.passou ? "✓ PASSOU" : "✗ FALHOU";
+                            
+                            // Aplica cores baseado no resultado
+                            if (resultData.passou) {
+                                resistanceCell.style.color = "var(--success-color)";
+                                resultCell.style.color = "var(--success-color)";
+                                resultCell.style.fontWeight = "bold";
+                            } else {
+                                resistanceCell.style.color = "var(--danger-color)";
+                                resultCell.style.color = "var(--danger-color)";
+                                resultCell.style.fontWeight = "bold";
+                            }
                         }
                     }
 
@@ -332,8 +380,23 @@ document.addEventListener("DOMContentLoaded", () => {
                     const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
                     indicators.forEach(ind => ind.className = "test-indicator status-done");
 
-                    const hasFailed = state.testResults.some(r => r.resistencia === "ABERTO");
-                    const overallStatus = hasFailed ? "REPROVADO" : "APROVADO";
+                    // Verifica se é caso especial (1 par)
+                    const isSpecialCase = state.currentModule.quantidadePares === 1;
+                    
+                    let overallStatus;
+                    if (isSpecialCase) {
+                        // Caso especial: sempre aprovado (apenas medição)
+                        overallStatus = "MEDIDO";
+                        ui.progressTitle.textContent = "Teste Finalizado - Valores Medidos";
+                        ui.progressTitle.style.color = "var(--primary-color)";
+                    } else {
+                        // Caso normal: verifica se algum teste falhou
+                        const hasFailed = state.testResults.some(r => r.passou === false);
+                        overallStatus = hasFailed ? "REPROVADO" : "APROVADO";
+                        ui.progressTitle.textContent = `Teste Finalizado - ${overallStatus}`;
+                        ui.progressTitle.style.color = hasFailed ? "var(--danger-color)" : "var(--success-color)";
+                    }
+                    
                     saveTestToHistory(state.testResults, overallStatus);
                     break;
                 }
@@ -378,8 +441,6 @@ document.addEventListener("DOMContentLoaded", () => {
         ui.progressStatusText.innerHTML = "<h4>Aguardando instruções do dispositivo...</h4>";
         ui.testIndicatorsContainer.classList.add("hidden");
         ui.testResultActions.classList.add("hidden");
-        ui.debugLogContainer.style.display = "block";
-        ui.debugLog.textContent = "";
         showScreen(ui.progressScreen);
         
         await sendJsonCommand({ comando: "calibrar", numTerminais: state.currentModule.quantidadePares });
@@ -394,20 +455,100 @@ document.addEventListener("DOMContentLoaded", () => {
         state.testResults = []; // Limpa resultados anteriores
         ui.progressTitle.textContent = "Executando Teste...";
         ui.testResultActions.classList.add("hidden");
-        ui.debugLog.textContent = "";
-        ui.debugLogContainer.style.display = "block";
 
         const numPairs = state.currentModule.quantidadePares;
         ui.testIndicatorsContainer.innerHTML = "";
-        for (let i = 1; i <= numPairs; i++) ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF ${i}</div>`;
-        for (let i = 1; i <= numPairs; i++) ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA ${i}</div>`;
-        ui.testIndicatorsContainer.classList.remove("hidden");
         
-        let tableHTML = `<table class="results-table"><thead><tr><th>Par de Contatos</th><th>Estado</th><th>Resistência (Ω)</th></tr></thead><tbody>`;
-        for (let i = 1; i <= numPairs; i++) tableHTML += `<tr id="result-row-NF-${i}"><td>NF ${i}</td><td>REPOUSO</td><td>--</td></tr>`;
-        for (let i = 1; i <= numPairs; i++) tableHTML += `<tr id="result-row-NA-${i}"><td>NA ${i}</td><td>ACIONADO</td><td>--</td></tr>`;
-        tableHTML += "</tbody></table>";
-        ui.progressStatusText.innerHTML = tableHTML;
+        // Caso especial: apenas 1 par
+        if (numPairs === 1) {
+            // Cria indicadores para o teste especial
+            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">COM-N# Des</div>`;
+            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">COM-N# Ene</div>`;
+            ui.testIndicatorsContainer.classList.remove("hidden");
+            
+            let tableHTML = `<table class="results-table">
+                <thead>
+                    <tr>
+                        <th>Contato</th>
+                        <th>Estado do Relé</th>
+                        <th>Resistência</th>
+                        <th>Esperado</th>
+                        <th>Resultado</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+            
+            tableHTML += `<tr id="result-row-COM-N#-1-DESENERGIZADO">
+                <td>COM-N# 1</td>
+                <td>DESENERGIZADO</td>
+                <td>--</td>
+                <td>VARIÁVEL</td>
+                <td>--</td>
+            </tr>`;
+            tableHTML += `<tr id="result-row-COM-N#-1-ENERGIZADO">
+                <td>COM-N# 1</td>
+                <td>ENERGIZADO</td>
+                <td>--</td>
+                <td>VARIÁVEL</td>
+                <td>--</td>
+            </tr>`;
+            tableHTML += "</tbody></table>";
+            ui.progressStatusText.innerHTML = tableHTML;
+        } else {
+            // Para múltiplos contatos NF
+            ui.testIndicatorsContainer.innerHTML = `<div class="test-indicator status-pending">Aguardando...</div>`;
+            ui.testIndicatorsContainer.classList.remove("hidden");
+            
+            let tableHTML = `<table class="results-table">
+                <thead>
+                    <tr>
+                        <th>Contato</th>
+                        <th>Estado do Relé</th>
+                        <th>Resistência</th>
+                        <th>Esperado</th>
+                        <th>Resultado</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+            
+            // Cria linhas dinamicamente baseado no número de contatos
+            // Alterna entre NF e NA para cada contato
+            for (let i = 0; i < numPairs; i++) {
+                const isNF = (i % 2 === 0);  // Par = NF, Ímpar = NA
+                const tipoContato = isNF ? "NF" : "NA";
+                const numeroContato = Math.floor(i / 2) + 1;
+                const esperadoRepouso = isNF ? "BAIXA (~0Ω)" : "INFINITA";
+                const esperadoEnergizado = isNF ? "INFINITA" : "BAIXA (~0Ω)";
+                
+                // Linha para teste em repouso
+                tableHTML += `<tr id="result-row-${tipoContato}-${numeroContato}-REPOUSO">
+                    <td>${tipoContato} ${numeroContato}</td>
+                    <td>REPOUSO</td>
+                    <td>--</td>
+                    <td>${esperadoRepouso}</td>
+                    <td>--</td>
+                </tr>`;
+            }
+            
+            // Agora as linhas para teste energizado (mesma alternância)
+            for (let i = 0; i < numPairs; i++) {
+                const isNF = (i % 2 === 0);  // Par = NF, Ímpar = NA
+                const tipoContato = isNF ? "NF" : "NA";
+                const numeroContato = Math.floor(i / 2) + 1;
+                const esperadoEnergizado = isNF ? "INFINITA" : "BAIXA (~0Ω)";
+                
+                // Linha para teste energizado
+                tableHTML += `<tr id="result-row-${tipoContato}-${numeroContato}-ENERGIZADO">
+                    <td>${tipoContato} ${numeroContato}</td>
+                    <td>ENERGIZADO</td>
+                    <td>--</td>
+                    <td>${esperadoEnergizado}</td>
+                    <td>--</td>
+                </tr>`;
+            }
+            tableHTML += "</tbody></table>";
+            ui.progressStatusText.innerHTML = tableHTML;
+        }
 
         showScreen(ui.progressScreen);
 
@@ -552,12 +693,55 @@ document.addEventListener("DOMContentLoaded", () => {
             sortedEntries.forEach((entry) => {
                 const card = document.createElement("div");
                 card.className = "history-card";
-                const statusClass = entry.status === "APROVADO" ? "status-ok" : "status-fail";
+                
+                // Determina a classe do status baseado no resultado
+                let statusClass;
+                if (entry.status === "APROVADO") {
+                    statusClass = "status-ok";
+                } else if (entry.status === "REPROVADO") {
+                    statusClass = "status-fail";
+                } else {
+                    statusClass = "status-measured"; // Para caso especial
+                }
+                
                 const formattedDate = new Date(entry.data).toLocaleString("pt-BR");
-                let tableHTML = `<table class="results-table"><thead><tr><th>Par</th><th>Estado</th><th>Resistência (Ω)</th></tr></thead><tbody>`;
+                
+                let tableHTML = `<table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Contato</th>
+                            <th>Estado</th>
+                            <th>Resistência</th>
+                            <th>Esperado</th>
+                            <th>Resultado</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+                
                 entry.resultados.forEach((res) => {
-                    tableHTML += `<tr><td>${res.par}</td><td>${res.estado}</td><td>${res.resistencia}</td></tr>`;
+                    const esperado = res.esperado || "N/A";
+                    let passou, resultColor;
+                    
+                    if (res.esperado === "VARIÁVEL") {
+                        // Caso especial
+                        passou = "MEDIDO";
+                        resultColor = "color: var(--primary-color)";
+                    } else {
+                        // Caso normal
+                        passou = res.passou !== undefined ? (res.passou ? "✓ PASSOU" : "✗ FALHOU") : "N/A";
+                        resultColor = res.passou === false ? "color: var(--danger-color)" : 
+                                     res.passou === true ? "color: var(--success-color)" : "";
+                    }
+                    
+                    tableHTML += `<tr>
+                        <td>${res.par}</td>
+                        <td>${res.estado}</td>
+                        <td>${res.resistencia}</td>
+                        <td>${esperado}</td>
+                        <td style="${resultColor}; font-weight: bold;">${passou}</td>
+                    </tr>`;
                 });
+                
                 tableHTML += `</tbody></table>`;
                 card.innerHTML = `<div class="history-card-header"><h4>Teste de ${formattedDate}</h4><span class="${statusClass}">${entry.status}</span></div>${tableHTML}`;
                 ui.historyListContainer.appendChild(card);

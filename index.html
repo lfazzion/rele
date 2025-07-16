@@ -92,7 +92,7 @@
                                 type="text"
                                 id="module-name"
                                 required
-                                placeholder="Ex: Jiga para Relé Finder 40.52"
+                                placeholder="Ex: Módulo para SRA-12VDC-CL"
                             />
                         </div>
                         <div class="form-group">
@@ -113,7 +113,7 @@
                         </div>
                         <div class="form-group">
                             <label for="module-terminals"
-                                >Quantidade de Pares de Contatos a Testar</label
+                                >Quantidade de Contatos a Testar</label
                             >
                             <input
                                 type="number"
@@ -124,8 +124,8 @@
                                 value="1"
                             />
                             <p class="form-hint">
-                                Ex: Relé 5V de 5 terminais possui 1 par de contatos
-                                COM - N#. Insira '1'.
+                                Ex: Relé 5V de 5 terminais possui 2 contatos,
+                                1 COM-NF e 1 COM-NA. Insira '2'.
                             </p>
                         </div>
                         <div class="form-actions">
@@ -198,35 +198,6 @@
                     <h2 id="progress-title">Executando...</h2>
 
                     <div id="test-indicators-container" class="hidden"></div>
-
-                    <div
-                        id="debug-log-container"
-                        style="display: none; margin-top: 1rem"
-                    >
-                        <h4
-                            style="
-                                margin-bottom: 0.5rem;
-                                color: var(--light-text-color);
-                            "
-                        >
-                            Log de Comunicação
-                        </h4>
-                        <pre
-                            id="debug-log"
-                            style="
-                                background-color: var(--bg-color);
-                                border: 1px solid var(--border-color);
-                                padding: 10px;
-                                text-align: left;
-                                max-height: 150px;
-                                overflow-y: auto;
-                                color: var(--text-color);
-                                border-radius: 8px;
-                                font-size: 0.8rem;
-                                line-height: 1.4;
-                            "
-                        ></pre>
-                    </div>
 
                     <div id="progress-status-text">
                         Aguardando início do processo...
