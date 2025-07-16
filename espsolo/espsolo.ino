@@ -32,7 +32,7 @@ struct TestConfig {
 };
 
 // =================================================================
-// FUNÇÕES DE COMUNICAÇÃO (sem alterações)
+// FUNÇÕES DE COMUNICAÇÃO
 // =================================================================
 
 void sendJsonResponse(const JsonDocument& doc) {
@@ -67,6 +67,16 @@ void aguardarConfirmacaoWebApp() {
     Serial.println(">>> Aguardando confirmação da WebApp...");
     g_aguardandoConfirmacao = true;
     while (g_aguardandoConfirmacao) {
+        // Processa comandos BLE enquanto aguarda confirmação
+        if (g_comandoRecebidoFlag) {
+            g_comandoRecebidoFlag = false;
+            StaticJsonDocument<1024> doc;
+            DeserializationError error = deserializeJson(doc, g_comandoJson);
+            if (!error) {
+                handleCommand(doc);
+            }
+        }
+
         if (!deviceConnected) {
             Serial.println("!!! DESCONECTADO DURANTE A ESPERA. ABORTANDO.");
             g_aguardandoConfirmacao = false;
@@ -75,6 +85,50 @@ void aguardarConfirmacaoWebApp() {
         delay(100);
     }
     Serial.println(">>> Confirmação recebida! Continuando...");
+}
+
+/**
+ * @brief SIMULAÇÃO: Aguarda o usuário pressionar 'b' no Monitor Serial.
+ */
+void aguardarComandoB() {
+    Serial.println("\n----------------------------------------------------");
+    Serial.println(">>> Pressione 'b' e Enter para continuar...");
+    Serial.println("----------------------------------------------------");
+
+    while (true) {
+        // Processa comandos BLE enquanto aguarda entrada do teclado
+        if (g_comandoRecebidoFlag) {
+            g_comandoRecebidoFlag = false;
+            StaticJsonDocument<1024> doc;
+            DeserializationError error = deserializeJson(doc, g_comandoJson);
+            if (!error) {
+                handleCommand(doc);
+            }
+        }
+
+        // Verifica entrada do Monitor Serial
+        if (Serial.available() > 0) {
+            String input = Serial.readStringUntil('\n');
+            input.trim();
+            input.toLowerCase();
+            Serial.println(">>> Entrada recebida: '" + input + "'");
+            if (input == "b") {
+                Serial.println(
+                    "[SIMULAÇÃO] Comando 'b' recebido! Continuando...");
+                break;
+            } else {
+                Serial.println(">>> Comando inválido. Pressione 'b' e Enter.");
+            }
+        }
+
+        // Verifica se ainda está conectado
+        if (!deviceConnected) {
+            Serial.println("!!! DESCONECTADO DURANTE A ESPERA. ABORTANDO.");
+            return;
+        }
+
+        delay(100);
+    }
 }
 
 /**
@@ -88,15 +142,35 @@ float medirResistenciaSimulada() {
     Serial.println(">>> Digite um valor (ex: 0.12 ou 1500) e pressione Enter:");
     Serial.println("----------------------------------------------------");
 
-    while (Serial.available() == 0) {
-        delay(100);  // Aguarda a entrada do usuário
+    while (true) {
+        // Processa comandos BLE enquanto aguarda entrada do teclado
+        if (g_comandoRecebidoFlag) {
+            g_comandoRecebidoFlag = false;
+            StaticJsonDocument<1024> doc;
+            DeserializationError error = deserializeJson(doc, g_comandoJson);
+            if (!error) {
+                handleCommand(doc);
+            }
+        }
+
+        // Verifica entrada do Monitor Serial
+        if (Serial.available() > 0) {
+            String input = Serial.readStringUntil('\n');
+            input.trim();
+            float valor = input.toFloat();
+            Serial.println("[SIMULAÇÃO] Valor de resistência fornecido: " +
+                           String(valor, 3) + " Ω");
+            return valor;
+        }
+
+        // Verifica se ainda está conectado
+        if (!deviceConnected) {
+            Serial.println("!!! DESCONECTADO DURANTE A ESPERA. ABORTANDO.");
+            return 0.0;
+        }
+
+        delay(100);
     }
-    String input = Serial.readStringUntil('\n');
-    input.trim();
-    float valor = input.toFloat();
-    Serial.println("[SIMULAÇÃO] Valor de resistência fornecido: " +
-                   String(valor, 3) + " Ω");
-    return valor;
 }
 
 /**
@@ -113,33 +187,46 @@ void pulsarReleSimulado() {
 void executarTesteConfiguravel(const TestConfig& config) {
     Serial.println("=== INICIANDO TESTE COM CONFIRMAÇÃO (SIMULADO) ===");
 
+    // Calcula o número total de testes (NF + NA)
+    int totalTestes = config.quantidadePares * 2;
+    int testeAtual = 0;
+
+    // Envia mensagem inicial para manter todos os indicadores em vermelho
+    StaticJsonDocument<200> initDoc;
+    initDoc["status"] = "test_init";
+    initDoc["totalTests"] = totalTestes;
+    sendJsonResponse(initDoc);
+
     // --- CICLO 1: ESTADO DE REPOUSO (CONTATOS NF) ---
     Serial.println("[SIMULAÇÃO] Relé em estado de REPOUSO.");
     for (int i = 0; i < config.quantidadePares; i++) {
-        StaticJsonDocument<200> stepDoc;
-        stepDoc["status"] = "test_step";
-        stepDoc["pair"] = i;
-        stepDoc["state"] = "REPOUSO";
-        stepDoc["message"] =
-            "REPOUSO: Conecte as pontas de prova no Par de Contatos #" +
-            String(i + 1) + ".";
-        sendJsonResponse(stepDoc);
+        // Aguarda o usuário pressionar 'b'
+        aguardarComandoB();
 
-        aguardarConfirmacaoWebApp();
-        if (!deviceConnected)
-            return;
+        // Sinaliza qual teste está sendo executado (piscando)
+        StaticJsonDocument<200> testingDoc;
+        testingDoc["status"] = "test_current";
+        testingDoc["testIndex"] = testeAtual;
+        testingDoc["pair"] = i;
+        testingDoc["state"] = "REPOUSO";
+        sendJsonResponse(testingDoc);
 
+        // Realiza a medição
         float res =
             medirResistenciaSimulada() - config.calibracao[i].as<float>();
 
+        // Envia o resultado
         StaticJsonDocument<200> resultDoc;
         resultDoc["status"] = "test_result";
+        resultDoc["testIndex"] = testeAtual;
         resultDoc["par"] = "NF " + String(i + 1);
         resultDoc["estado"] = "REPOUSO";
         resultDoc["resistencia"] = (res > LIMITE_RESISTENCIA_ABERTO || res < 0)
                                        ? "ABERTO"
                                        : String(res, 3);
         sendJsonResponse(resultDoc);
+
+        testeAtual++;
     }
 
     // --- ACIONAMENTO DO RELÉ ---
@@ -151,29 +238,33 @@ void executarTesteConfiguravel(const TestConfig& config) {
 
     // --- CICLO 2: ESTADO ACIONADO (CONTATOS NA) ---
     for (int i = 0; i < config.quantidadePares; i++) {
-        StaticJsonDocument<200> stepDoc;
-        stepDoc["status"] = "test_step";
-        stepDoc["pair"] = i;
-        stepDoc["state"] = "ACIONADO";
-        stepDoc["message"] =
-            "ACIONADO: Mantenha as pontas no Par #" + String(i + 1) + ".";
-        sendJsonResponse(stepDoc);
+        // Aguarda o usuário pressionar 'b'
+        aguardarComandoB();
 
-        aguardarConfirmacaoWebApp();
-        if (!deviceConnected)
-            return;
+        // Sinaliza qual teste está sendo executado (piscando)
+        StaticJsonDocument<200> testingDoc;
+        testingDoc["status"] = "test_current";
+        testingDoc["testIndex"] = testeAtual;
+        testingDoc["pair"] = i;
+        testingDoc["state"] = "ACIONADO";
+        sendJsonResponse(testingDoc);
 
+        // Realiza a medição
         float res =
             medirResistenciaSimulada() - config.calibracao[i].as<float>();
 
+        // Envia o resultado
         StaticJsonDocument<200> resultDoc;
         resultDoc["status"] = "test_result";
+        resultDoc["testIndex"] = testeAtual;
         resultDoc["par"] = "NA " + String(i + 1);
         resultDoc["estado"] = "ACIONADO";
         resultDoc["resistencia"] = (res > LIMITE_RESISTENCIA_ABERTO || res < 0)
                                        ? "ABERTO"
                                        : String(res, 3);
         sendJsonResponse(resultDoc);
+
+        testeAtual++;
     }
 
     // --- FINALIZAÇÃO E RESET ---
@@ -194,6 +285,10 @@ void executarCalibracao(int numTerminais) {
     JsonArray valores = finalCalibrationDoc.createNestedArray("data");
 
     for (int i = 0; i < numTerminais; i++) {
+        // Aguarda o usuário pressionar 'b'
+        aguardarComandoB();
+
+        // Envia notificação para a interface web
         StaticJsonDocument<200> promptDoc;
         promptDoc["status"] = "prompt";
         promptDoc["message"] =
@@ -237,7 +332,7 @@ void handleCommand(const JsonDocument& doc) {
 }
 
 // =================================================================
-// CLASSES DE CALLBACKS BLE (sem alterações)
+// CLASSES DE CALLBACKS BLE
 // =================================================================
 
 class MyCharacteristicCallbacks : public BLECharacteristicCallbacks {
@@ -277,7 +372,7 @@ void setup() {
     Serial.println("Aguardando conexão da interface web...");
 
     // Configuração do Servidor BLE
-    BLEDevice::init("Jiga de Teste Pro");
+    BLEDevice::init("Jiga - Bluetooth Esp32");
     BLEServer* pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());
     BLEService* pService = pServer->createService(BLE_SERVICE_UUID);
@@ -301,6 +396,7 @@ void setup() {
 }
 
 void loop() {
+    // Processa comandos BLE
     if (g_comandoRecebidoFlag) {
         g_comandoRecebidoFlag = false;
 

@@ -220,10 +220,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
         try {
             const json = JSON.parse(receivedText);
-            const numPairs = state.currentModule ? state.currentModule.quantidadePares : 0;
-            const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
 
             switch (json.status) {
+                case "test_init": {
+                    // Inicializa todos os indicadores em vermelho
+                    const totalTests = json.totalTests;
+                    const numPairs = state.currentModule.quantidadePares;
+                    const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
+                    
+                    indicators.forEach(indicator => {
+                        indicator.className = "test-indicator status-pending";
+                    });
+                    break;
+                }
+
+                case "test_current": {
+                    // Faz o indicador atual piscar
+                    const testIndex = json.testIndex;
+                    const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
+                    
+                    // Reset todos para pending
+                    indicators.forEach((indicator, index) => {
+                        if (index < testIndex) {
+                            indicator.className = "test-indicator status-done";
+                        } else if (index === testIndex) {
+                            indicator.className = "test-indicator status-testing";
+                        } else {
+                            indicator.className = "test-indicator status-pending";
+                        }
+                    });
+                    break;
+                }
+
                 case "prompt":
                 case "test_step": {
                     const message = json.message;
@@ -231,7 +259,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (json.status === "test_step") {
                         const pairNumber = json.pair; // 0-indexed
                         const isAcionado = json.state === "ACIONADO";
+                        const numPairs = state.currentModule ? state.currentModule.quantidadePares : 0;
                         const currentIndex = isAcionado ? numPairs + pairNumber : pairNumber;
+                        const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
 
                         indicators.forEach((indicator, index) => {
                             indicator.className = "test-indicator " + (index < currentIndex ? "status-done" : index === currentIndex ? "status-testing" : "status-pending");
@@ -252,9 +282,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 case "test_result": {
-                    const resultData = { par: json.par, estado: json.estado, resistencia: json.resistencia };
+                    const resultData = { 
+                        par: json.par, 
+                        estado: json.estado, 
+                        resistencia: json.resistencia 
+                    };
                     state.testResults.push(resultData);
 
+                    // Atualiza a tabela de resultados
                     const rowId = `result-row-${resultData.par.replace(" ", "-")}`;
                     const row = document.getElementById(rowId);
                     if (row) {
@@ -263,6 +298,14 @@ document.addEventListener("DOMContentLoaded", () => {
                         if (resultData.resistencia === "ABERTO") {
                             resistanceCell.style.color = "var(--danger-color)";
                             resistanceCell.style.fontWeight = "bold";
+                        }
+                    }
+
+                    // Atualiza o indicador para azul (concluído)
+                    if (json.testIndex !== undefined) {
+                        const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
+                        if (indicators[json.testIndex]) {
+                            indicators[json.testIndex].className = "test-indicator status-done";
                         }
                     }
                     break;
@@ -285,6 +328,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     ui.progressTitle.textContent = "Teste Finalizado";
                     ui.testResultActions.classList.remove("hidden");
 
+                    // Marca todos os indicadores como concluídos
+                    const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
                     indicators.forEach(ind => ind.className = "test-indicator status-done");
 
                     const hasFailed = state.testResults.some(r => r.resistencia === "ABERTO");
