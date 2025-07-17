@@ -97,17 +97,17 @@
                         </div>
                         <div class="form-group">
                             <label for="module-actuation-type"
-                                >Tipo de Acionamento do Relé</label
+                                >Tipo de Relé a Testar</label
                             >
                             <select id="module-actuation-type" required>
                                 <option value="" disabled selected>
                                     Selecione o acionamento...
                                 </option>
-                                <option value="TIPO_PADRAO">
-                                    Padrão (DC)
+                                <option value="TIPO_DC">
+                                    Relé DC (Tensão Contínua)
                                 </option>
-                                <option value="TIPO_TRAVAMENTO">
-                                    Alternado (AC)
+                                <option value="TIPO_AC">
+                                    Relé AC (Tensão Alternada)
                                 </option>
                             </select>
                         </div>
@@ -164,6 +164,10 @@
                         <p>
                             <strong>Última Calibração:</strong>
                             <span id="manage-calibration-date"></span>
+                        </p>
+                        <p>
+                            <strong>Valor de Calibração:</strong>
+                            <span id="manage-calibration-value"></span>
                         </p>
                         <div class="management-actions">
                             <button id="calibrate-module-button" class="btn">

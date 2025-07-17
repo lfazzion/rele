@@ -339,15 +339,12 @@ void executarTesteEspecialUmContato(const TestConfig& config) {
 
     // --- ACIONAMENTO DO RELÉ ---
     Serial.println("\n=== ACIONANDO O RELÉ ===");
-    if (config.tipoAcionamento == "TIPO_PADRAO") {
+    if (config.tipoAcionamento == "TIPO_DC") {
         digitalWrite(RELAY_DC, 1);
         state_RGB('O');  // Azul - energizado
-    } else {
-        // Pulso para relé com trava
-        digitalWrite(RELAY_DC, 1);
-        delay(100);
-        digitalWrite(RELAY_DC, 0);
-        state_RGB('O');  // Azul - estado alterado
+    } else {             // TIPO_AC
+        digitalWrite(RELAY_AC, 1);
+        state_RGB('O');  // Azul - energizado
     }
 
     delay(500);  // Tempo para estabilização
@@ -384,13 +381,10 @@ void executarTesteEspecialUmContato(const TestConfig& config) {
 
     // --- FINALIZAÇÃO ---
     Serial.println("\n=== FINALIZANDO TESTE ESPECIAL ===");
-    if (config.tipoAcionamento == "TIPO_TRAVAMENTO") {
-        // Outro pulso para voltar ao estado original
-        digitalWrite(RELAY_DC, 1);
-        delay(100);
+    if (config.tipoAcionamento == "TIPO_DC") {
         digitalWrite(RELAY_DC, 0);
-    } else {
-        digitalWrite(RELAY_DC, 0);
+    } else {  // TIPO_AC
+        digitalWrite(RELAY_AC, 0);
     }
 
     reset_output();
@@ -405,19 +399,18 @@ void executarTesteEspecialUmContato(const TestConfig& config) {
 /**
  * @brief Executa teste configurável para múltiplos contatos
  *
- * Sequência de teste para um relé de 5 terminais (2 contatos):
+ * Nova sequência alternada para um relé de 5 terminais (2 contatos):
  * 1. COM-NF1 DESENERGIZADO (deve ter baixa resistência ~0Ω)
- * 2. COM-NA1 DESENERGIZADO (deve estar aberto ~∞Ω)
- * 3. [Aciona o relé]
- * 4. COM-NF1 ENERGIZADO (deve estar aberto ~∞Ω)
- * 5. COM-NA1 ENERGIZADO (deve ter baixa resistência ~0Ω)
+ * 2. COM-NF1 ENERGIZADO (deve estar aberto ~∞Ω)
+ * 3. COM-NA1 DESENERGIZADO (deve estar aberto ~∞Ω)
+ * 4. COM-NA1 ENERGIZADO (deve ter baixa resistência ~0Ω)
+ * 5. COM-NF2 DESENERGIZADO (deve ter baixa resistência ~0Ω)
+ * 6. COM-NF2 ENERGIZADO (deve estar aberto ~∞Ω)
+ * 7. COM-NA2 DESENERGIZADO (deve estar aberto ~∞Ω)
+ * 8. COM-NA2 ENERGIZADO (deve ter baixa resistência ~0Ω)
  *
- * Para relés com mais contatos, a sequência se repete:
- * - Primeiro todos os NF desenergizados
- * - Depois todos os NA desenergizados
- * - Então aciona o relé
- * - Depois todos os NF energizados
- * - Por fim todos os NA energizados
+ * Ordem alternada: testa completamente cada contato (des/ene) antes de passar
+ * ao próximo Benefício: menos trocas de contatos, mais prático para o operador
  */
 void executarTesteConfiguravel(const TestConfig& config) {
     Serial.println("=== INICIANDO TESTE DE RELÉ CONFIGURÁVEL ===");
@@ -462,213 +455,219 @@ void executarTesteConfiguravel(const TestConfig& config) {
     initDoc["totalTests"] = totalTestes;
     sendJsonResponse(initDoc);
 
-    // --- FASE 1: ESTADO DESENERGIZADO (TODOS OS CONTATOS) ---
-    Serial.println("\n=== FASE 1: RELÉ DESENERGIZADO (TODOS OS CONTATOS) ===");
+    // --- NOVA ORDEM ALTERNADA: TESTA CADA CONTATO COMPLETAMENTE ---
+    Serial.println("\n=== EXECUTANDO TESTES EM ORDEM ALTERNADA ===");
 
-    // Primeiro todos os contatos NF desenergizados (devem ter baixa
-    // resistência)
-    for (int i = 0; i < numContatosNF; i++) {
+    // Calcula o número máximo de contatos para iterar
+    int maxContatos =
+        (numContatosNF > numContatosNA) ? numContatosNF : numContatosNA;
+
+    for (int i = 0; i < maxContatos; i++) {
         if (!deviceConnected)
             return;
 
-        // Sinaliza teste atual
-        StaticJsonDocument<200> testingDoc;
-        testingDoc["status"] = "test_current";
-        testingDoc["testIndex"] = testeAtual;
-        testingDoc["pair"] = i;
-        testingDoc["state"] = "DESENERGIZADO";
-        sendJsonResponse(testingDoc);
+        // --- CONTATO NF DESENERGIZADO ---
+        if (i < numContatosNF) {
+            StaticJsonDocument<200> testingDoc;
+            testingDoc["status"] = "test_current";
+            testingDoc["testIndex"] = testeAtual;
+            testingDoc["pair"] = i;
+            testingDoc["state"] = "DESENERGIZADO";
+            sendJsonResponse(testingDoc);
 
-        String contato = "COM-NF" + String(i + 1);
-        aguardarBotaoJiga(
-            "TESTE " + contato +
-            ": Relé DESENERGIZADO. Conecte o multímetro entre COM e NF" +
-            String(i + 1) + " e pressione o botão");
+            String contato = "COM-NF" + String(i + 1);
+            aguardarBotaoJiga(
+                "TESTE " + contato +
+                ": Relé DESENERGIZADO. Conecte o multímetro entre COM e NF" +
+                String(i + 1) + " e pressione o botão");
 
-        if (!deviceConnected)
-            return;
+            if (!deviceConnected)
+                return;
 
-        // Realiza medição
-        float resistencia = medirResistencia();
+            // Realiza medição
+            float resistencia = medirResistencia();
 
-        // Envia resultado - NF desenergizado deve ter baixa resistência
-        StaticJsonDocument<200> resultDoc;
-        resultDoc["status"] = "test_result";
-        resultDoc["testIndex"] = testeAtual;
-        resultDoc["contato"] = contato;
-        resultDoc["estado"] = "DESENERGIZADO";
-        resultDoc["resistencia"] =
-            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
-                ? "ABERTO"
-                : String(resistencia, 3);
-        resultDoc["esperado"] = "BAIXA";
-        resultDoc["passou"] =
-            (resistencia >= 0 &&
-             resistencia <= 10.0);  // Ajuste do limite para baixa resistência
-        sendJsonResponse(resultDoc);
+            // Envia resultado - NF desenergizado deve ter baixa resistência
+            StaticJsonDocument<200> resultDoc;
+            resultDoc["status"] = "test_result";
+            resultDoc["testIndex"] = testeAtual;
+            resultDoc["contato"] = contato;
+            resultDoc["estado"] = "DESENERGIZADO";
+            resultDoc["resistencia"] =
+                (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
+                    ? "ABERTO"
+                    : String(resistencia, 3);
+            resultDoc["esperado"] = "BAIXA";
+            resultDoc["passou"] = (resistencia >= 0 && resistencia <= 10.0);
+            sendJsonResponse(resultDoc);
 
-        testeAtual++;
-    }
+            testeAtual++;
+        }
 
-    // Depois todos os contatos NA desenergizados (devem estar abertos)
-    for (int i = 0; i < numContatosNA; i++) {
-        if (!deviceConnected)
-            return;
+        // --- CONTATO NF ENERGIZADO ---
+        if (i < numContatosNF) {
+            // Aciona o relé antes do teste energizado
+            if (config.tipoAcionamento == "TIPO_DC") {
+                digitalWrite(RELAY_DC, 1);
+                state_RGB('O');  // Azul - energizado
+            } else {
+                digitalWrite(RELAY_AC, 1);
+                state_RGB('O');  // Azul - energizado
+            }
+            delay(500);  // Tempo para estabilização
 
-        // Sinaliza teste atual
-        StaticJsonDocument<200> testingDoc;
-        testingDoc["status"] = "test_current";
-        testingDoc["testIndex"] = testeAtual;
-        testingDoc["pair"] = i;
-        testingDoc["state"] = "DESENERGIZADO";
-        sendJsonResponse(testingDoc);
+            StaticJsonDocument<200> testingDoc;
+            testingDoc["status"] = "test_current";
+            testingDoc["testIndex"] = testeAtual;
+            testingDoc["pair"] = i;
+            testingDoc["state"] = "ENERGIZADO";
+            sendJsonResponse(testingDoc);
 
-        String contato = "COM-NA" + String(i + 1);
-        aguardarBotaoJiga(
-            "TESTE " + contato +
-            ": Relé DESENERGIZADO. Conecte o multímetro entre COM e NA" +
-            String(i + 1) + " e pressione o botão");
+            String contato = "COM-NF" + String(i + 1);
+            aguardarBotaoJiga(
+                "TESTE " + contato +
+                ": Relé ENERGIZADO. Conecte o multímetro entre COM e NF" +
+                String(i + 1) + " e pressione o botão");
 
-        if (!deviceConnected)
-            return;
+            if (!deviceConnected)
+                return;
 
-        // Realiza medição
-        float resistencia = medirResistencia();
+            // Realiza medição
+            float resistencia = medirResistencia();
 
-        // Envia resultado - NA desenergizado deve estar aberto
-        StaticJsonDocument<200> resultDoc;
-        resultDoc["status"] = "test_result";
-        resultDoc["testIndex"] = testeAtual;
-        resultDoc["contato"] = contato;
-        resultDoc["estado"] = "DESENERGIZADO";
-        resultDoc["resistencia"] =
-            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
-                ? "ABERTO"
-                : String(resistencia, 3);
-        resultDoc["esperado"] = "ABERTO";
-        resultDoc["passou"] =
-            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0);
-        sendJsonResponse(resultDoc);
+            // Envia resultado - NF energizado deve estar aberto
+            StaticJsonDocument<200> resultDoc;
+            resultDoc["status"] = "test_result";
+            resultDoc["testIndex"] = testeAtual;
+            resultDoc["contato"] = contato;
+            resultDoc["estado"] = "ENERGIZADO";
+            resultDoc["resistencia"] =
+                (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
+                    ? "ABERTO"
+                    : String(resistencia, 3);
+            resultDoc["esperado"] = "ABERTO";
+            resultDoc["passou"] =
+                (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0);
+            sendJsonResponse(resultDoc);
 
-        testeAtual++;
-    }
+            testeAtual++;
 
-    // --- ACIONAMENTO DO RELÉ ---
-    Serial.println("\n=== ACIONANDO O RELÉ ===");
-    if (config.tipoAcionamento == "TIPO_PADRAO") {
-        digitalWrite(RELAY_DC, 1);
-        state_RGB('O');  // Azul - energizado
-    } else {
-        // Pulso para relé com trava
-        digitalWrite(RELAY_DC, 1);
-        delay(100);
-        digitalWrite(RELAY_DC, 0);
-        state_RGB('O');  // Azul - estado alterado
-    }
+            // Desaciona o relé após o teste
+            if (config.tipoAcionamento == "TIPO_DC") {
+                digitalWrite(RELAY_DC, 0);
+            } else {
+                digitalWrite(RELAY_AC, 0);
+            }
+            reset_output();
+            delay(500);  // Tempo para estabilização
+        }
 
-    delay(500);  // Tempo para estabilização
+        // --- CONTATO NA DESENERGIZADO ---
+        if (i < numContatosNA) {
+            StaticJsonDocument<200> testingDoc;
+            testingDoc["status"] = "test_current";
+            testingDoc["testIndex"] = testeAtual;
+            testingDoc["pair"] = i;
+            testingDoc["state"] = "DESENERGIZADO";
+            sendJsonResponse(testingDoc);
 
-    // --- FASE 2: ESTADO ENERGIZADO (TODOS OS CONTATOS) ---
-    Serial.println("\n=== FASE 2: RELÉ ENERGIZADO (TODOS OS CONTATOS) ===");
+            String contato = "COM-NA" + String(i + 1);
+            aguardarBotaoJiga(
+                "TESTE " + contato +
+                ": Relé DESENERGIZADO. Conecte o multímetro entre COM e NA" +
+                String(i + 1) + " e pressione o botão");
 
-    // Primeiro todos os contatos NF energizados (devem estar abertos)
-    for (int i = 0; i < numContatosNF; i++) {
-        if (!deviceConnected)
-            return;
+            if (!deviceConnected)
+                return;
 
-        // Sinaliza teste atual
-        StaticJsonDocument<200> testingDoc;
-        testingDoc["status"] = "test_current";
-        testingDoc["testIndex"] = testeAtual;
-        testingDoc["pair"] = i;
-        testingDoc["state"] = "ENERGIZADO";
-        sendJsonResponse(testingDoc);
+            // Realiza medição
+            float resistencia = medirResistencia();
 
-        String contato = "COM-NF" + String(i + 1);
-        aguardarBotaoJiga(
-            "TESTE " + contato +
-            ": Relé ENERGIZADO. Conecte o multímetro entre COM e NF" +
-            String(i + 1) + " e pressione o botão");
+            // Envia resultado - NA desenergizado deve estar aberto
+            StaticJsonDocument<200> resultDoc;
+            resultDoc["status"] = "test_result";
+            resultDoc["testIndex"] = testeAtual;
+            resultDoc["contato"] = contato;
+            resultDoc["estado"] = "DESENERGIZADO";
+            resultDoc["resistencia"] =
+                (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
+                    ? "ABERTO"
+                    : String(resistencia, 3);
+            resultDoc["esperado"] = "ABERTO";
+            resultDoc["passou"] =
+                (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0);
+            sendJsonResponse(resultDoc);
 
-        if (!deviceConnected)
-            return;
+            testeAtual++;
+        }
 
-        // Realiza medição
-        float resistencia = medirResistencia();
+        // --- CONTATO NA ENERGIZADO ---
+        if (i < numContatosNA) {
+            // Aciona o relé antes do teste energizado
+            if (config.tipoAcionamento == "TIPO_DC") {
+                digitalWrite(RELAY_DC, 1);
+                state_RGB('O');  // Azul - energizado
+            } else {
+                digitalWrite(RELAY_AC, 1);
+                state_RGB('O');  // Azul - energizado
+            }
+            delay(500);  // Tempo para estabilização
 
-        // Envia resultado - NF energizado deve estar aberto
-        StaticJsonDocument<200> resultDoc;
-        resultDoc["status"] = "test_result";
-        resultDoc["testIndex"] = testeAtual;
-        resultDoc["contato"] = contato;
-        resultDoc["estado"] = "ENERGIZADO";
-        resultDoc["resistencia"] =
-            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
-                ? "ABERTO"
-                : String(resistencia, 3);
-        resultDoc["esperado"] = "ABERTO";
-        resultDoc["passou"] =
-            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0);
-        sendJsonResponse(resultDoc);
+            StaticJsonDocument<200> testingDoc;
+            testingDoc["status"] = "test_current";
+            testingDoc["testIndex"] = testeAtual;
+            testingDoc["pair"] = i;
+            testingDoc["state"] = "ENERGIZADO";
+            sendJsonResponse(testingDoc);
 
-        testeAtual++;
-    }
+            String contato = "COM-NA" + String(i + 1);
+            aguardarBotaoJiga(
+                "TESTE " + contato +
+                ": Relé ENERGIZADO. Conecte o multímetro entre COM e NA" +
+                String(i + 1) + " e pressione o botão");
 
-    // Depois todos os contatos NA energizados (devem ter baixa resistência)
-    for (int i = 0; i < numContatosNA; i++) {
-        if (!deviceConnected)
-            return;
+            if (!deviceConnected)
+                return;
 
-        // Sinaliza teste atual
-        StaticJsonDocument<200> testingDoc;
-        testingDoc["status"] = "test_current";
-        testingDoc["testIndex"] = testeAtual;
-        testingDoc["pair"] = i;
-        testingDoc["state"] = "ENERGIZADO";
-        sendJsonResponse(testingDoc);
+            // Realiza medição
+            float resistencia = medirResistencia();
 
-        String contato = "COM-NA" + String(i + 1);
-        aguardarBotaoJiga(
-            "TESTE " + contato +
-            ": Relé ENERGIZADO. Conecte o multímetro entre COM e NA" +
-            String(i + 1) + " e pressione o botão");
+            // Envia resultado - NA energizado deve ter baixa resistência
+            StaticJsonDocument<200> resultDoc;
+            resultDoc["status"] = "test_result";
+            resultDoc["testIndex"] = testeAtual;
+            resultDoc["contato"] = contato;
+            resultDoc["estado"] = "ENERGIZADO";
+            resultDoc["resistencia"] =
+                (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
+                    ? "ABERTO"
+                    : String(resistencia, 3);
+            resultDoc["esperado"] = "BAIXA";
+            resultDoc["passou"] = (resistencia >= 0 && resistencia <= 10.0);
+            sendJsonResponse(resultDoc);
 
-        if (!deviceConnected)
-            return;
+            testeAtual++;
 
-        // Realiza medição
-        float resistencia = medirResistencia();
-
-        // Envia resultado - NA energizado deve ter baixa resistência
-        StaticJsonDocument<200> resultDoc;
-        resultDoc["status"] = "test_result";
-        resultDoc["testIndex"] = testeAtual;
-        resultDoc["contato"] = contato;
-        resultDoc["estado"] = "ENERGIZADO";
-        resultDoc["resistencia"] =
-            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
-                ? "ABERTO"
-                : String(resistencia, 3);
-        resultDoc["esperado"] = "BAIXA";
-        resultDoc["passou"] =
-            (resistencia >= 0 &&
-             resistencia <= 10.0);  // Ajuste do limite para baixa resistência
-        sendJsonResponse(resultDoc);
-
-        testeAtual++;
+            // Desaciona o relé após o teste
+            if (config.tipoAcionamento == "TIPO_DC") {
+                digitalWrite(RELAY_DC, 0);
+            } else {
+                digitalWrite(RELAY_AC, 0);
+            }
+            reset_output();
+            delay(500);  // Tempo para estabilização
+        }
     }
 
     // --- FINALIZAÇÃO ---
     Serial.println("\n=== FINALIZANDO TESTE ===");
-    if (config.tipoAcionamento == "TIPO_TRAVAMENTO") {
-        // Outro pulso para voltar ao estado original
-        digitalWrite(RELAY_DC, 1);
-        delay(100);
+
+    // Garante que o relé está desacionado
+    if (config.tipoAcionamento == "TIPO_DC") {
         digitalWrite(RELAY_DC, 0);
     } else {
-        digitalWrite(RELAY_DC, 0);
+        digitalWrite(RELAY_AC, 0);
     }
-
     reset_output();
 
     StaticJsonDocument<100> completeDoc;

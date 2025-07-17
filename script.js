@@ -47,6 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
         manageRelayType: document.getElementById("manage-relay-type"),
         manageTerminals: document.getElementById("manage-terminals"),
         manageCalibrationDate: document.getElementById("manage-calibration-date"),
+        manageCalibrationValue: document.getElementById("manage-calibration-value"),
         calibrateModuleButton: document.getElementById("calibrate-module-button"),
         startTestButton: document.getElementById("start-test-button"),
         editModuleButton: document.getElementById("edit-module-button"),
@@ -236,21 +237,21 @@ document.addEventListener("DOMContentLoaded", () => {
                         const numContatosNF = Math.floor(numContatos / 2);
                         const numContatosNA = Math.floor(numContatos / 2);
                         
-                        // Fase 1: Todos os contatos NF desenergizados
-                        for (let i = 0; i < numContatosNF; i++) {
-                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i + 1} Des</div>`;
-                        }
-                        // Fase 2: Todos os contatos NA desenergizados
-                        for (let i = 0; i < numContatosNA; i++) {
-                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i + 1} Des</div>`;
-                        }
-                        // Fase 3: Todos os contatos NF energizados
-                        for (let i = 0; i < numContatosNF; i++) {
-                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i + 1} Ene</div>`;
-                        }
-                        // Fase 4: Todos os contatos NA energizados
-                        for (let i = 0; i < numContatosNA; i++) {
-                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i + 1} Ene</div>`;
+                        // Nova ordem: alterna desenergizado/energizado para cada contato
+                        // NF1 Des -> NF1 Ene -> NA1 Des -> NA1 Ene -> NF2 Des -> NF2 Ene -> NA2 Des -> NA2 Ene...
+                        const maxContatos = Math.max(numContatosNF, numContatosNA);
+                        
+                        for (let i = 0; i < maxContatos; i++) {
+                            // Contato NF desenergizado e energizado
+                            if (i < numContatosNF) {
+                                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i + 1} Des</div>`;
+                                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i + 1} Ene</div>`;
+                            }
+                            // Contato NA desenergizado e energizado
+                            if (i < numContatosNA) {
+                                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i + 1} Des</div>`;
+                                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i + 1} Ene</div>`;
+                            }
                         }
                     }
                     
@@ -314,7 +315,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 case "calibration_processing": {
-                    ui.progressStatusText.innerHTML = "<h4>" + json.message + "</h4>";
+                    ui.progressStatusText.innerHTML = `
+                        <h4>${json.message}</h4>
+                        <p>Realizando múltiplas medições para obter um valor preciso...</p>
+                        <p style="color: var(--light-text-color); font-size: 0.9rem;">
+                            Este processo pode levar alguns segundos.
+                        </p>
+                    `;
                     break;
                 }
 
@@ -389,11 +396,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 case "calibration_complete": {
                     hideGlobalAlert();
-                    showGlobalAlert("Calibração finalizada com sucesso!", "success");
+                    
+                    // Mostra o resultado da calibração com o valor
+                    const valorCalibrado = json.valor;
+                    const mensagemSucesso = `
+                        <div style="text-align: center;">
+                            <h3 style="color: var(--success-color); margin: 0 0 1rem 0;">
+                                ✅ Calibração Concluída!
+                            </h3>
+                            <p style="margin: 0.5rem 0;">
+                                <strong>Valor medido:</strong>
+                            </p>
+                            <p style="font-family: monospace; font-size: 1.2rem; font-weight: bold; color: var(--primary-color); margin: 0.5rem 0;">
+                                ${valorCalibrado.toFixed(6)} Ω
+                            </p>
+                            <p style="margin: 1rem 0 0 0; font-size: 0.9rem; color: var(--light-text-color);">
+                                Este valor será usado como referência para compensar a resistência dos cabos e conectores.
+                            </p>
+                        </div>
+                    `;
+                    
+                    // Cria botão personalizado para fechar
+                    const closeButton = document.createElement('button');
+                    closeButton.className = 'btn btn-primary';
+                    closeButton.textContent = 'OK';
+                    closeButton.onclick = () => hideGlobalAlert();
+                    
+                    // Mostra o alerta com HTML
+                    ui.alertMessage.innerHTML = mensagemSucesso;
+                    ui.globalAlert.querySelector(".alert-box").className = "alert-box alert-success";
+                    ui.alertActions.innerHTML = "";
+                    ui.alertActions.appendChild(closeButton);
+                    ui.globalAlert.classList.remove("hidden");
 
                     const newCalibrationData = { 
                         data: new Date().toISOString(), 
-                        valores: [json.valor] // Usar o campo "valor" enviado pelo ESP32
+                        valores: [valorCalibrado] // Usar o campo "valor" enviado pelo ESP32
                     };
                     database.ref(`modulos/${state.currentModule.id}/calibracao`).set(newCalibrationData);
 
@@ -403,7 +441,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     setTimeout(() => {
                         hideGlobalAlert();
                         selectModule(state.currentModule.id, updatedModule);
-                    }, 2000);
+                    }, 5000); // Aumentado para 5 segundos para dar tempo de ler
                     break;
                 }
 
@@ -461,11 +499,22 @@ document.addEventListener("DOMContentLoaded", () => {
     function selectModule(id, moduleData) {
         state.currentModule = { id, ...moduleData };
         ui.managementTitle.textContent = state.currentModule.nome;
-        const actuationTypeName = state.currentModule.tipoAcionamento === "TIPO_PADRAO" ? "Padrão (Tensão Contínua)" : "Com Travamento (Pulso)";
+        const actuationTypeName = state.currentModule.tipoAcionamento === "TIPO_DC" ? "Relé DC (Tensão Contínua)" : "Relé AC (Tensão Alternada)";
         ui.manageRelayType.textContent = actuationTypeName;
         ui.manageTerminals.textContent = state.currentModule.quantidadeContatos;
         const calDate = state.currentModule.calibracao?.data;
         ui.manageCalibrationDate.textContent = calDate ? new Date(calDate).toLocaleString("pt-BR") : "Pendente";
+        
+        // Exibe o valor da calibração
+        const calValue = state.currentModule.calibracao?.valores?.[0];
+        if (calValue !== undefined && calValue !== null) {
+            ui.manageCalibrationValue.textContent = `${calValue.toFixed(6)} Ω`;
+            ui.manageCalibrationValue.style.color = "var(--success-color)";
+        } else {
+            ui.manageCalibrationValue.textContent = "Não calibrado";
+            ui.manageCalibrationValue.style.color = "var(--danger-color)";
+        }
+        
         ui.startTestButton.disabled = !calDate;
         showScreen(ui.moduleManagementScreen);
     }
@@ -474,7 +523,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!state.currentModule) return;
         
         ui.progressTitle.textContent = "Calibrando Módulo: " + state.currentModule.nome;
-        ui.progressStatusText.innerHTML = "<h4>Preparando calibração...</h4>";
+        ui.progressStatusText.innerHTML = `
+            <h4>Preparando calibração...</h4>
+            <p>A calibração compensa a resistência dos cabos e conectores de teste.</p>
+            <p style="color: var(--warning-color); font-weight: bold;">
+                ⚠️ Importante: Conecte os fios de medição em curto-circuito antes de prosseguir.
+            </p>
+        `;
         ui.testIndicatorsContainer.classList.add("hidden");
         ui.testResultActions.classList.add("hidden");
         showScreen(ui.progressScreen);
@@ -534,24 +589,26 @@ document.addEventListener("DOMContentLoaded", () => {
             tableHTML += "</tbody></table>";
             ui.progressStatusText.innerHTML = tableHTML;
         } else {
-            // Para múltiplos contatos - ordem correta do teste
+            // Para múltiplos contatos - nova ordem alternada do teste
             // Exemplo: relé 5 terminais com 2 contatos = 1 NF + 1 NA
-            // Sequência: NF1 Des -> NA1 Des -> [aciona] -> NF1 Ene -> NA1 Ene
+            // Nova sequência: NF1 Des -> NF1 Ene -> NA1 Des -> NA1 Ene -> NF2 Des -> NF2 Ene -> NA2 Des -> NA2 Ene
             const numContatosNF = numContatos / 2;
             const numContatosNA = numContatos / 2;
             
-            // Indicadores na ordem correta: NF desenergizado, NA desenergizado, NF energizado, NA energizado
-            for (let i = 0; i < numContatosNF; i++) {
-                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i+1} Des</div>`;
-            }
-            for (let i = 0; i < numContatosNA; i++) {
-                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i+1} Des</div>`;
-            }
-            for (let i = 0; i < numContatosNF; i++) {
-                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i+1} Ene</div>`;
-            }
-            for (let i = 0; i < numContatosNA; i++) {
-                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i+1} Ene</div>`;
+            // Indicadores na nova ordem alternada
+            const maxContatos = Math.max(numContatosNF, numContatosNA);
+            
+            for (let i = 0; i < maxContatos; i++) {
+                // Contato NF desenergizado e energizado
+                if (i < numContatosNF) {
+                    ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i+1} Des</div>`;
+                    ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i+1} Ene</div>`;
+                }
+                // Contato NA desenergizado e energizado
+                if (i < numContatosNA) {
+                    ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i+1} Des</div>`;
+                    ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i+1} Ene</div>`;
+                }
             }
             ui.testIndicatorsContainer.classList.remove("hidden");
             
@@ -567,49 +624,53 @@ document.addEventListener("DOMContentLoaded", () => {
                 </thead>
                 <tbody>`;
             
-            // Ordem correta: primeiro todos desenergizados, depois todos energizados
-            // 1. Contatos NF desenergizados (devem ter baixa resistência)
-            for (let i = 0; i < numContatosNF; i++) {
-                tableHTML += `<tr id="result-row-COM-NF${i+1}-DESENERGIZADO">
-                    <td>COM-NF${i+1}</td>
-                    <td>DESENERGIZADO</td>
-                    <td class="resistance-value">--</td>
-                    <td>BAIXA</td>
-                    <td class="status-value">--</td>
-                </tr>`;
-            }
+            // Nova ordem alternada: NF1 Des -> NF1 Ene -> NA1 Des -> NA1 Ene -> NF2 Des -> NF2 Ene...
+            const maxContatosTable = Math.max(numContatosNF, numContatosNA);
             
-            // 2. Contatos NA desenergizados (devem estar abertos)
-            for (let i = 0; i < numContatosNA; i++) {
-                tableHTML += `<tr id="result-row-COM-NA${i+1}-DESENERGIZADO">
-                    <td>COM-NA${i+1}</td>
-                    <td>DESENERGIZADO</td>
-                    <td class="resistance-value">--</td>
-                    <td>ABERTO</td>
-                    <td class="status-value">--</td>
-                </tr>`;
-            }
-            
-            // 3. Contatos NF energizados (devem estar abertos)
-            for (let i = 0; i < numContatosNF; i++) {
-                tableHTML += `<tr id="result-row-COM-NF${i+1}-ENERGIZADO">
-                    <td>COM-NF${i+1}</td>
-                    <td>ENERGIZADO</td>
-                    <td class="resistance-value">--</td>
-                    <td>ABERTO</td>
-                    <td class="status-value">--</td>
-                </tr>`;
-            }
-            
-            // 4. Contatos NA energizados (devem ter baixa resistência)
-            for (let i = 0; i < numContatosNA; i++) {
-                tableHTML += `<tr id="result-row-COM-NA${i+1}-ENERGIZADO">
-                    <td>COM-NA${i+1}</td>
-                    <td>ENERGIZADO</td>
-                    <td class="resistance-value">--</td>
-                    <td>BAIXA</td>
-                    <td class="status-value">--</td>
-                </tr>`;
+            for (let i = 0; i < maxContatosTable; i++) {
+                // Contato NF desenergizado
+                if (i < numContatosNF) {
+                    tableHTML += `<tr id="result-row-COM-NF${i+1}-DESENERGIZADO">
+                        <td>COM-NF${i+1}</td>
+                        <td>DESENERGIZADO</td>
+                        <td class="resistance-value">--</td>
+                        <td>BAIXA</td>
+                        <td class="status-value">--</td>
+                    </tr>`;
+                }
+                
+                // Contato NF energizado
+                if (i < numContatosNF) {
+                    tableHTML += `<tr id="result-row-COM-NF${i+1}-ENERGIZADO">
+                        <td>COM-NF${i+1}</td>
+                        <td>ENERGIZADO</td>
+                        <td class="resistance-value">--</td>
+                        <td>ABERTO</td>
+                        <td class="status-value">--</td>
+                    </tr>`;
+                }
+                
+                // Contato NA desenergizado
+                if (i < numContatosNA) {
+                    tableHTML += `<tr id="result-row-COM-NA${i+1}-DESENERGIZADO">
+                        <td>COM-NA${i+1}</td>
+                        <td>DESENERGIZADO</td>
+                        <td class="resistance-value">--</td>
+                        <td>ABERTO</td>
+                        <td class="status-value">--</td>
+                    </tr>`;
+                }
+                
+                // Contato NA energizado
+                if (i < numContatosNA) {
+                    tableHTML += `<tr id="result-row-COM-NA${i+1}-ENERGIZADO">
+                        <td>COM-NA${i+1}</td>
+                        <td>ENERGIZADO</td>
+                        <td class="resistance-value">--</td>
+                        <td>BAIXA</td>
+                        <td class="status-value">--</td>
+                    </tr>`;
+                }
             }
             
             tableHTML += "</tbody></table>";
@@ -641,7 +702,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     const card = document.createElement("div");
                     card.className = "card module-card";
                     card.dataset.moduleId = id;
-                    const typeName = module.tipoAcionamento === "TIPO_PADRAO" ? "Padrão" : "Com Travamento";
+                    const typeName = module.tipoAcionamento === "TIPO_DC" ? "DC" : "AC";
                     card.innerHTML = `<h3>${module.nome}</h3><p>${typeName}</p>`;
                     card.addEventListener("click", () => selectModule(id, module));
                     ui.moduleList.appendChild(card);
@@ -782,7 +843,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     </thead>
                     <tbody>`;
                 
-                // Ordena os resultados na ordem correta do teste
+                // Ordena os resultados na nova ordem alternada do teste
                 const orderedResults = entry.resultados.sort((a, b) => {
                     // Função para determinar a ordem baseada no contato e estado
                     const getOrder = (res) => {
@@ -795,15 +856,17 @@ document.addEventListener("DOMContentLoaded", () => {
                         const contatoMatch = res.contato.match(/(\d+)/);
                         const numero = contatoMatch ? parseInt(contatoMatch[1]) : 0;
                         
-                        // Ordem: NF desenergizado, NA desenergizado, NF energizado, NA energizado
+                        // Nova ordem alternada: NF1 Des -> NF1 Ene -> NA1 Des -> NA1 Ene -> NF2 Des -> NF2 Ene...
+                        const baseIndex = (numero - 1) * 4;
+                        
                         if (res.contato.includes("NF") && res.estado === "DESENERGIZADO") {
-                            return (numero - 1) * 4 + 0; // NF desenergizado
-                        } else if (res.contato.includes("NA") && res.estado === "DESENERGIZADO") {
-                            return (numero - 1) * 4 + 1; // NA desenergizado
+                            return baseIndex + 0; // NF desenergizado
                         } else if (res.contato.includes("NF") && res.estado === "ENERGIZADO") {
-                            return (numero - 1) * 4 + 2; // NF energizado
+                            return baseIndex + 1; // NF energizado
+                        } else if (res.contato.includes("NA") && res.estado === "DESENERGIZADO") {
+                            return baseIndex + 2; // NA desenergizado
                         } else if (res.contato.includes("NA") && res.estado === "ENERGIZADO") {
-                            return (numero - 1) * 4 + 3; // NA energizado
+                            return baseIndex + 3; // NA energizado
                         }
                         return 999; // Fallback
                     };
