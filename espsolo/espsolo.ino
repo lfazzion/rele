@@ -532,41 +532,46 @@ void executarCalibracao(int numTerminais) {
     Serial.println(
         "A calibração serve para compensar a resistência dos fios e "
         "conectores.");
+    Serial.println(
+        "Como a resistência dos fios é a mesma para todos os pares,");
+    Serial.println("a calibração é feita apenas uma vez.");
     Serial.println("========================================================");
 
     StaticJsonDocument<512> finalCalibrationDoc;
     finalCalibrationDoc["status"] = "calibration_complete";
     JsonArray valores = finalCalibrationDoc.createNestedArray("data");
 
+    // Envia notificação para a interface web
+    StaticJsonDocument<200> promptDoc;
+    promptDoc["status"] = "prompt";
+    promptDoc["message"] =
+        String("CALIBRAÇÃO: ") + String(
+                                     "Conecte os fios em curto-circuito para "
+                                     "medir a resistência dos fios. Clique "
+                                     "'Pronto'.");
+    sendJsonResponse(promptDoc);
+
+    aguardarConfirmacaoWebApp();
+    if (!deviceConnected)
+        return;
+
+    // Medição de calibração (sempre em curto-circuito)
+    float cal = medirResistenciaSimulada("Curto-circuito (fios)", "CALIBRAÇÃO");
+
+    // Adiciona o mesmo valor de calibração para todos os pares
     for (int i = 0; i < numTerminais; i++) {
-        // Envia notificação para a interface web
-        StaticJsonDocument<200> promptDoc;
-        promptDoc["status"] = "prompt";
-        promptDoc["message"] = String("CALIBRAÇÃO Par ") + String(i + 1) +
-                               String(": ") +
-                               String(
-                                   "Para medir a resistência dos fios. Clique "
-                                   "'Pronto'.");
-        sendJsonResponse(promptDoc);
-
-        aguardarConfirmacaoWebApp();
-        if (!deviceConnected)
-            return;
-
-        // Medição de calibração (sempre em curto-circuito)
-        float cal =
-            medirResistenciaSimulada("Curto-circuito (fios)", "CALIBRAÇÃO");
         valores.add(cal);
-
-        StaticJsonDocument<200> resultDoc;
-        resultDoc["status"] = "calibration_result";
-        resultDoc["par"] = i + 1;
-        resultDoc["valor"] = cal;
-        sendJsonResponse(resultDoc);
-
-        Serial.println("Par #" + String(i + 1) + " calibrado com " +
-                       String(cal, 3) + " Ω");
     }
+
+    StaticJsonDocument<200> resultDoc;
+    resultDoc["status"] = "calibration_result";
+    resultDoc["par"] = 1;
+    resultDoc["valor"] = cal;
+    sendJsonResponse(resultDoc);
+
+    Serial.println("Calibração concluída com " + String(cal, 3) + " Ω");
+    Serial.println("Este valor será usado para todos os " +
+                   String(numTerminais) + " pares de contatos.");
 
     sendJsonResponse(finalCalibrationDoc);
     Serial.println("=== CALIBRAÇÃO CONCLUÍDA ===\n");

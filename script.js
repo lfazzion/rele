@@ -159,7 +159,10 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             updateConnectionStatus("connecting");
             bleDevice = await navigator.bluetooth.requestDevice({
-                filters: [{ name: "Jiga - Bluetooth Esp32" }],
+                filters: [
+                    { name: "Jiga-Teste-Reles" },
+                    { namePrefix: "Jiga" }
+                ],
                 optionalServices: [BLE_SERVICE_UUID],
             });
             bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
@@ -291,6 +294,35 @@ document.addEventListener("DOMContentLoaded", () => {
                     break;
                 }
 
+                case "button_pressed": {
+                    // Botão da jiga foi pressionado, fechar o modal
+                    hideGlobalAlert();
+                    // Não sobrescreve a tabela, apenas fecha o modal
+                    break;
+                }
+
+                case "calibration_init": {
+                    ui.progressStatusText.innerHTML = "<h4>" + json.message + "</h4>";
+                    break;
+                }
+
+                case "calibration_processing": {
+                    ui.progressStatusText.innerHTML = "<h4>" + json.message + "</h4>";
+                    break;
+                }
+
+                case "test_starting": {
+                    // Não sobrescreve a tabela, apenas atualiza o título se necessário
+                    ui.progressTitle.textContent = "Executando Teste...";
+                    break;
+                }
+
+                case "test_special_init": {
+                    // Não sobrescreve a tabela, apenas atualiza o título se necessário
+                    ui.progressTitle.textContent = "Teste Especial - 1 Par";
+                    break;
+                }
+
                 case "calibration_result": {
                     ui.progressStatusText.innerHTML += `<p>Par #${json.par} calibrado: ${json.valor.toFixed(3)} Ω</p>`;
                     break;
@@ -312,12 +344,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         // Caso especial de 1 par
                         rowId = `result-row-COM-N#-1-${json.estado}`;
                     } else {
-                        // Caso normal - O Arduino envia formato "NF 1" ou "NA 1"
-                        // Converte para "result-row-NF-1-REPOUSO" ou "result-row-NA-1-ENERGIZADO"
-                        const parParts = json.par.split(" ");
-                        const tipo = parParts[0];  // "NF" ou "NA"
-                        const numero = parParts[1];  // "1", "2", etc.
-                        rowId = `result-row-${tipo}-${numero}-${json.estado}`;
+                        // Caso normal - O Arduino envia formato "COM-NF1" ou "COM-NA1"
+                        // Converte para "result-row-COM-NF1-DESENERGIZADO" ou "result-row-COM-NA1-ENERGIZADO"
+                        rowId = `result-row-${json.par}-${json.estado}`;
                     }
                     
                     const row = document.getElementById(rowId);
@@ -363,11 +392,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     hideGlobalAlert();
                     showGlobalAlert("Calibração finalizada com sucesso!", "success");
 
-                    const newCalibrationData = { data: new Date().toISOString(), valores: json.data };
+                    const newCalibrationData = { 
+                        data: new Date().toISOString(), 
+                        valores: [json.valor] // Usar o campo "valor" enviado pelo ESP32
+                    };
                     database.ref(`modulos/${state.currentModule.id}/calibracao`).set(newCalibrationData);
 
                     const updatedModule = { ...state.currentModule, calibracao: newCalibrationData };
-                    selectModule(state.currentModule.id, updatedModule);
+                    
+                    // Aguarda um pouco antes de voltar para a tela de gerenciamento
+                    setTimeout(() => {
+                        hideGlobalAlert();
+                        selectModule(state.currentModule.id, updatedModule);
+                    }, 2000);
                     break;
                 }
 
@@ -437,13 +474,16 @@ document.addEventListener("DOMContentLoaded", () => {
     async function startCalibration() {
         if (!state.currentModule) return;
         
-        ui.progressTitle.textContent = "Calibrando...";
-        ui.progressStatusText.innerHTML = "<h4>Aguardando instruções do dispositivo...</h4>";
+        ui.progressTitle.textContent = "Calibrando Módulo: " + state.currentModule.nome;
+        ui.progressStatusText.innerHTML = "<h4>Preparando calibração...</h4>";
         ui.testIndicatorsContainer.classList.add("hidden");
         ui.testResultActions.classList.add("hidden");
         showScreen(ui.progressScreen);
         
-        await sendJsonCommand({ comando: "calibrar", numTerminais: state.currentModule.quantidadePares });
+        await sendJsonCommand({ 
+            comando: "calibrar", 
+            numTerminais: state.currentModule.quantidadePares 
+        });
     }
 
     async function startTest() {
@@ -495,8 +535,13 @@ document.addEventListener("DOMContentLoaded", () => {
             tableHTML += "</tbody></table>";
             ui.progressStatusText.innerHTML = tableHTML;
         } else {
-            // Para múltiplos contatos NF
-            ui.testIndicatorsContainer.innerHTML = `<div class="test-indicator status-pending">Aguardando...</div>`;
+            // Para múltiplos contatos
+            for (let i = 0; i < numPairs; i++) {
+                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i+1} Des</div>`;
+            }
+            for (let i = 0; i < numPairs; i++) {
+                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i+1} Ene</div>`;
+            }
             ui.testIndicatorsContainer.classList.remove("hidden");
             
             let tableHTML = `<table class="results-table">
@@ -511,41 +556,28 @@ document.addEventListener("DOMContentLoaded", () => {
                 </thead>
                 <tbody>`;
             
-            // Cria linhas dinamicamente baseado no número de contatos
-            // Alterna entre NF e NA para cada contato
+            // Cria linhas para teste desenergizado (contatos NF)
             for (let i = 0; i < numPairs; i++) {
-                const isNF = (i % 2 === 0);  // Par = NF, Ímpar = NA
-                const tipoContato = isNF ? "NF" : "NA";
-                const numeroContato = Math.floor(i / 2) + 1;
-                const esperadoRepouso = isNF ? "BAIXA (~0Ω)" : "INFINITA";
-                const esperadoEnergizado = isNF ? "INFINITA" : "BAIXA (~0Ω)";
-                
-                // Linha para teste em repouso
-                tableHTML += `<tr id="result-row-${tipoContato}-${numeroContato}-REPOUSO">
-                    <td>${tipoContato} ${numeroContato}</td>
-                    <td>REPOUSO</td>
+                tableHTML += `<tr id="result-row-COM-NF${i+1}-DESENERGIZADO">
+                    <td>COM-NF${i+1}</td>
+                    <td>DESENERGIZADO</td>
                     <td>--</td>
-                    <td>${esperadoRepouso}</td>
+                    <td>BAIXA</td>
                     <td>--</td>
                 </tr>`;
             }
             
-            // Agora as linhas para teste energizado (mesma alternância)
+            // Cria linhas para teste energizado (contatos NA)  
             for (let i = 0; i < numPairs; i++) {
-                const isNF = (i % 2 === 0);  // Par = NF, Ímpar = NA
-                const tipoContato = isNF ? "NF" : "NA";
-                const numeroContato = Math.floor(i / 2) + 1;
-                const esperadoEnergizado = isNF ? "INFINITA" : "BAIXA (~0Ω)";
-                
-                // Linha para teste energizado
-                tableHTML += `<tr id="result-row-${tipoContato}-${numeroContato}-ENERGIZADO">
-                    <td>${tipoContato} ${numeroContato}</td>
+                tableHTML += `<tr id="result-row-COM-NA${i+1}-ENERGIZADO">
+                    <td>COM-NA${i+1}</td>
                     <td>ENERGIZADO</td>
                     <td>--</td>
-                    <td>${esperadoEnergizado}</td>
+                    <td>BAIXA</td>
                     <td>--</td>
                 </tr>`;
             }
+            
             tableHTML += "</tbody></table>";
             ui.progressStatusText.innerHTML = tableHTML;
         }
@@ -554,11 +586,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         await sendJsonCommand({
             comando: "iniciar_teste",
-            config: {
-                tipoAcionamento: state.currentModule.tipoAcionamento,
-                quantidadePares: state.currentModule.quantidadePares,
-                calibracao: state.currentModule.calibracao.valores,
-            },
+            tipoAcionamento: state.currentModule.tipoAcionamento,
+            quantidadePares: state.currentModule.quantidadePares,
+            calibracao: state.currentModule.calibracao.valores,
         });
     }
 
