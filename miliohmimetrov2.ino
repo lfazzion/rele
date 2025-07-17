@@ -5,14 +5,8 @@
 
 #include "ADS1X15.h"
 #include <Wire.h>
-#include <BluetoothSerial.h>
-
-#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
-#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
-#endif
 
 #define LED_CONT  4
-#define LED_ON    25
 #define RGB_RED   14
 #define RGB_GREEN 27
 #define RGB_BLUE  26
@@ -24,7 +18,6 @@
 #define res_ref   99.781
 
 ADS1115 ADS(0x48);
-BluetoothSerial SerialBT;
 
 float res[2][8] = {0.0};
 float res_cal = 0.0;
@@ -34,11 +27,9 @@ bool relay_state = 0;
 
 void setup() {
   Serial.begin(9600);             // Inicializa a comunicação Serial com 9600 baud rate
-  SerialBT.begin("Jiga Rele BT"); // Inicializa a cominucação Serial Bluetooth com o nome "Jiga Rele BT"
   Wire.begin();                   // Inicializa a comunicação I2C
 
   pinMode(LED_CONT, OUTPUT);
-  pinMode(LED_ON, OUTPUT);
   pinMode(RGB_RED, OUTPUT);
   pinMode(RGB_GREEN, OUTPUT);
   pinMode(RGB_BLUE, OUTPUT);
@@ -60,8 +51,8 @@ String menssure_time(int relay_type){
   unsigned long endTime = micros();
   unsigned long duration_on = endTime - startTime;
 
-  unsigned long start = milis();
-  while(milis()-start<1000){}
+  unsigned long start = millis();
+  while(millis()-start<1000){}
 
   val = ADS.readADC_Differential_0_3();
   startTime = micros();
@@ -80,7 +71,7 @@ void reset_output(){
   digitalWrite(RELAY_AC, 0);
 }
 
-void state_RGB(char state){
+/*void state_RGB(char state){
   switch(state){
     case "O":
       digitalWrite(RGB_RED, 0);
@@ -98,7 +89,7 @@ void state_RGB(char state){
       digitalWrite(RGB_BLUE, 0);
       break;
   }
-}
+}*/
 
 float get_res(){
   if(ADS.isConnected()){
@@ -121,6 +112,12 @@ void action_relay(int relay_action){
   digitalWrite(relay_action, !relay_state);
 }
 
+void wait_confirmation(int j = 0){
+  digitalWrite(LED_CONT, 1);
+  while(digitalRead(BUTTON)==0){}
+  digitalWrite(LED_CONT, 0);
+}
+
 void calibrate(){
   wait_confirmation();
   res_cal = 0.0;
@@ -128,17 +125,6 @@ void calibrate(){
     res_cal += get_res();
   }
   res_cal = res_cal/MEAN;
-}
-
-void wait_confirmation(int j = 0){
-  if(j==0){
-    SerialBT.println("Preparado para calibração. Pressione o botão para iniciar.");
-  }else{
-    SerialBT.println("Preparado para a próxima leitura do terminal" + String(j) +". Entre com '1' para continuar.");
-  }
-  digitalWrite(LED_CONT, 1);
-  while(digitalRead(BUTTON)==0){}
-  digitalWrite(LED_CONT, 0);
 }
 
 void read_voltage(int n, int relay_action){
@@ -156,18 +142,26 @@ void read_voltage(int n, int relay_action){
 }
 
 void loop() {
-  if(SerialBT.available()>0){
-    String input = SerialBT.String();
-    switch(input[0]){
+  if(Serial.available()>0){
+    char input = Serial.read();
+    switch(input){
       case 'C':
         calibrate();
-        SerialBT.println("Calibração realizada");
+        Serial.println("Calibraçao realizada");
         break;
       case 'V':
-        
+        Serial.println("Entre com a quantidade de terminais");
+        while(Serial.available()==0){}
+        num = Serial.parseInt();
+        read_voltage(num, RELAY_DC);
+        for(int k=0; k<2; k++){
+          for(int i=0; i<num; i++){
+            Serial.println("Resistencia " + String(i) + ":\t" + String(res[k][i], 3));
+          }
+        }
         break;
       default:
-        SerialBT.println("0");
+        Serial.println("Opção inválida");
         break;
     }
   }
