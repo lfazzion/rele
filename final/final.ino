@@ -60,7 +60,7 @@ bool relay_state = false;
 // Estrutura para armazenar a configuração do teste recebida da WebApp
 struct TestConfig {
     String tipoAcionamento;
-    int quantidadePares;
+    int quantidadeContatos;  // Número total de contatos a testar (NF + NA)
     JsonArrayConst calibracao;
 };
 
@@ -278,15 +278,17 @@ float medirResistencia() {
 // =================================================================
 
 /**
- * @brief Executa teste especial para apenas 1 par de contatos
+ * @brief Executa teste especial para apenas 1 contato
+ * Como não sabemos se o usuário vai testar NF ou NA, medimos COM-N# nos dois
+ * estados sem avaliar se passou ou falhou, apenas registramos os valores
  */
-void executarTesteEspecialUmPar(const TestConfig& config) {
-    Serial.println("=== TESTE ESPECIAL PARA 1 PAR DE CONTATOS ===");
+void executarTesteEspecialUmContato(const TestConfig& config) {
+    Serial.println("=== TESTE ESPECIAL PARA 1 CONTATO ===");
 
     // Envia status inicial
     StaticJsonDocument<200> statusDoc;
     statusDoc["status"] = "test_special_init";
-    statusDoc["message"] = "Iniciando teste especial para 1 par...";
+    statusDoc["message"] = "Iniciando teste especial para 1 contato...";
     sendJsonResponse(statusDoc);
 
     int totalTestes = 2;
@@ -310,8 +312,8 @@ void executarTesteEspecialUmPar(const TestConfig& config) {
     sendJsonResponse(testingDoc);
 
     aguardarBotaoJiga(
-        "TESTE Par #1 - Contato COM-N#: Relé DESENERGIZADO. Conecte o "
-        "multímetro entre COM e N# e pressione o botão");
+        "TESTE Contato #1 - COM-N#: Relé DESENERGIZADO. Conecte o "
+        "multímetro entre COM e o contato N# (NF ou NA) e pressione o botão");
 
     if (!deviceConnected)
         return;
@@ -319,18 +321,18 @@ void executarTesteEspecialUmPar(const TestConfig& config) {
     // Realiza medição
     float resDesenergizado = medirResistencia();
 
-    // Envia resultado
+    // Envia resultado sem avaliação de aprovação
     StaticJsonDocument<200> resultDoc;
     resultDoc["status"] = "test_result";
     resultDoc["testIndex"] = testeAtual;
-    resultDoc["par"] = "COM-N# 1";
+    resultDoc["contato"] = "COM-N# 1";
     resultDoc["estado"] = "DESENERGIZADO";
     resultDoc["resistencia"] =
         (resDesenergizado > LIMITE_RESISTENCIA_ABERTO || resDesenergizado < 0)
             ? "ABERTO"
             : String(resDesenergizado, 3);
     resultDoc["esperado"] = "VARIÁVEL";
-    resultDoc["passou"] = true;
+    resultDoc["passou"] = true;  // Sempre passa no teste especial
     sendJsonResponse(resultDoc);
 
     testeAtual++;
@@ -348,6 +350,8 @@ void executarTesteEspecialUmPar(const TestConfig& config) {
         state_RGB('O');  // Azul - estado alterado
     }
 
+    delay(500);  // Tempo para estabilização
+
     // --- TESTE 2: ESTADO ENERGIZADO ---
     Serial.println("\n=== TESTE 2: RELÉ ENERGIZADO ===");
 
@@ -357,8 +361,8 @@ void executarTesteEspecialUmPar(const TestConfig& config) {
     sendJsonResponse(testingDoc);
 
     aguardarBotaoJiga(
-        "TESTE Par #1 - Contato COM-N#: Relé ENERGIZADO. Conecte o multímetro "
-        "entre COM e N# e pressione o botão");
+        "TESTE Contato #1 - COM-N#: Relé ENERGIZADO. Conecte o multímetro "
+        "entre COM e o contato N# (NF ou NA) e pressione o botão");
 
     if (!deviceConnected)
         return;
@@ -366,16 +370,16 @@ void executarTesteEspecialUmPar(const TestConfig& config) {
     // Realiza medição
     float resEnergizado = medirResistencia();
 
-    // Envia resultado
+    // Envia resultado sem avaliação de aprovação
     resultDoc["testIndex"] = testeAtual;
-    resultDoc["par"] = "COM-N# 1";
+    resultDoc["contato"] = "COM-N# 1";
     resultDoc["estado"] = "ENERGIZADO";
     resultDoc["resistencia"] =
         (resEnergizado > LIMITE_RESISTENCIA_ABERTO || resEnergizado < 0)
             ? "ABERTO"
             : String(resEnergizado, 3);
     resultDoc["esperado"] = "VARIÁVEL";
-    resultDoc["passou"] = true;
+    resultDoc["passou"] = true;  // Sempre passa no teste especial
     sendJsonResponse(resultDoc);
 
     // --- FINALIZAÇÃO ---
@@ -398,11 +402,29 @@ void executarTesteEspecialUmPar(const TestConfig& config) {
     Serial.println("=== TESTE ESPECIAL FINALIZADO ===\n");
 }
 
+/**
+ * @brief Executa teste configurável para múltiplos contatos
+ *
+ * Sequência de teste para um relé de 5 terminais (2 contatos):
+ * 1. COM-NF1 DESENERGIZADO (deve ter baixa resistência ~0Ω)
+ * 2. COM-NA1 DESENERGIZADO (deve estar aberto ~∞Ω)
+ * 3. [Aciona o relé]
+ * 4. COM-NF1 ENERGIZADO (deve estar aberto ~∞Ω)
+ * 5. COM-NA1 ENERGIZADO (deve ter baixa resistência ~0Ω)
+ *
+ * Para relés com mais contatos, a sequência se repete:
+ * - Primeiro todos os NF desenergizados
+ * - Depois todos os NA desenergizados
+ * - Então aciona o relé
+ * - Depois todos os NF energizados
+ * - Por fim todos os NA energizados
+ */
 void executarTesteConfiguravel(const TestConfig& config) {
     Serial.println("=== INICIANDO TESTE DE RELÉ CONFIGURÁVEL ===");
     Serial.println("Configuração:");
     Serial.println("- Tipo de Acionamento: " + config.tipoAcionamento);
-    Serial.println("- Quantidade de Pares: " + String(config.quantidadePares));
+    Serial.println("- Quantidade de Contatos: " +
+                   String(config.quantidadeContatos));
     Serial.println(
         "==========================================================");
 
@@ -412,18 +434,26 @@ void executarTesteConfiguravel(const TestConfig& config) {
     statusDoc["message"] = "Iniciando teste do módulo...";
     sendJsonResponse(statusDoc);
 
-    // Verifica se é o caso especial de apenas 1 par
-    if (config.quantidadePares == 1) {
-        Serial.println("=== EXECUTANDO TESTE ESPECIAL (1 PAR) ===");
-        executarTesteEspecialUmPar(config);
+    // Verifica se é o caso especial de apenas 1 contato
+    if (config.quantidadeContatos == 1) {
+        Serial.println("=== EXECUTANDO TESTE ESPECIAL (1 CONTATO) ===");
+        executarTesteEspecialUmContato(config);
         return;
     }
 
-    // Calcula o número total de testes
-    int totalTestes = config.quantidadePares * 2;
+    // Calcula quantos contatos NF e NA temos
+    // Se o usuário inseriu 2 contatos = 1 NF + 1 NA
+    // Se o usuário inseriu 4 contatos = 2 NF + 2 NA
+    // Se o usuário inseriu 6 contatos = 3 NF + 3 NA
+    int numContatosNF = config.quantidadeContatos / 2;
+    int numContatosNA = config.quantidadeContatos / 2;
+    int totalTestes =
+        config.quantidadeContatos * 2;  // Cada contato testado em 2 estados
     int testeAtual = 0;
 
     Serial.println("=== EXECUTANDO TESTE PADRÃO ===");
+    Serial.println("Número de contatos NF: " + String(numContatosNF));
+    Serial.println("Número de contatos NA: " + String(numContatosNA));
     Serial.println("Total de testes: " + String(totalTestes));
 
     // Envia mensagem inicial
@@ -435,7 +465,9 @@ void executarTesteConfiguravel(const TestConfig& config) {
     // --- FASE 1: ESTADO DESENERGIZADO (TODOS OS CONTATOS) ---
     Serial.println("\n=== FASE 1: RELÉ DESENERGIZADO (TODOS OS CONTATOS) ===");
 
-    for (int i = 0; i < config.quantidadePares; i++) {
+    // Primeiro todos os contatos NF desenergizados (devem ter baixa
+    // resistência)
+    for (int i = 0; i < numContatosNF; i++) {
         if (!deviceConnected)
             return;
 
@@ -459,11 +491,11 @@ void executarTesteConfiguravel(const TestConfig& config) {
         // Realiza medição
         float resistencia = medirResistencia();
 
-        // Envia resultado
+        // Envia resultado - NF desenergizado deve ter baixa resistência
         StaticJsonDocument<200> resultDoc;
         resultDoc["status"] = "test_result";
         resultDoc["testIndex"] = testeAtual;
-        resultDoc["par"] = contato;
+        resultDoc["contato"] = contato;
         resultDoc["estado"] = "DESENERGIZADO";
         resultDoc["resistencia"] =
             (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
@@ -471,7 +503,51 @@ void executarTesteConfiguravel(const TestConfig& config) {
                 : String(resistencia, 3);
         resultDoc["esperado"] = "BAIXA";
         resultDoc["passou"] =
-            (resistencia >= 0 && resistencia <= LIMITE_RESISTENCIA_ABERTO);
+            (resistencia >= 0 &&
+             resistencia <= 10.0);  // Ajuste do limite para baixa resistência
+        sendJsonResponse(resultDoc);
+
+        testeAtual++;
+    }
+
+    // Depois todos os contatos NA desenergizados (devem estar abertos)
+    for (int i = 0; i < numContatosNA; i++) {
+        if (!deviceConnected)
+            return;
+
+        // Sinaliza teste atual
+        StaticJsonDocument<200> testingDoc;
+        testingDoc["status"] = "test_current";
+        testingDoc["testIndex"] = testeAtual;
+        testingDoc["pair"] = i;
+        testingDoc["state"] = "DESENERGIZADO";
+        sendJsonResponse(testingDoc);
+
+        String contato = "COM-NA" + String(i + 1);
+        aguardarBotaoJiga(
+            "TESTE " + contato +
+            ": Relé DESENERGIZADO. Conecte o multímetro entre COM e NA" +
+            String(i + 1) + " e pressione o botão");
+
+        if (!deviceConnected)
+            return;
+
+        // Realiza medição
+        float resistencia = medirResistencia();
+
+        // Envia resultado - NA desenergizado deve estar aberto
+        StaticJsonDocument<200> resultDoc;
+        resultDoc["status"] = "test_result";
+        resultDoc["testIndex"] = testeAtual;
+        resultDoc["contato"] = contato;
+        resultDoc["estado"] = "DESENERGIZADO";
+        resultDoc["resistencia"] =
+            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
+                ? "ABERTO"
+                : String(resistencia, 3);
+        resultDoc["esperado"] = "ABERTO";
+        resultDoc["passou"] =
+            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0);
         sendJsonResponse(resultDoc);
 
         testeAtual++;
@@ -495,7 +571,51 @@ void executarTesteConfiguravel(const TestConfig& config) {
     // --- FASE 2: ESTADO ENERGIZADO (TODOS OS CONTATOS) ---
     Serial.println("\n=== FASE 2: RELÉ ENERGIZADO (TODOS OS CONTATOS) ===");
 
-    for (int i = 0; i < config.quantidadePares; i++) {
+    // Primeiro todos os contatos NF energizados (devem estar abertos)
+    for (int i = 0; i < numContatosNF; i++) {
+        if (!deviceConnected)
+            return;
+
+        // Sinaliza teste atual
+        StaticJsonDocument<200> testingDoc;
+        testingDoc["status"] = "test_current";
+        testingDoc["testIndex"] = testeAtual;
+        testingDoc["pair"] = i;
+        testingDoc["state"] = "ENERGIZADO";
+        sendJsonResponse(testingDoc);
+
+        String contato = "COM-NF" + String(i + 1);
+        aguardarBotaoJiga(
+            "TESTE " + contato +
+            ": Relé ENERGIZADO. Conecte o multímetro entre COM e NF" +
+            String(i + 1) + " e pressione o botão");
+
+        if (!deviceConnected)
+            return;
+
+        // Realiza medição
+        float resistencia = medirResistencia();
+
+        // Envia resultado - NF energizado deve estar aberto
+        StaticJsonDocument<200> resultDoc;
+        resultDoc["status"] = "test_result";
+        resultDoc["testIndex"] = testeAtual;
+        resultDoc["contato"] = contato;
+        resultDoc["estado"] = "ENERGIZADO";
+        resultDoc["resistencia"] =
+            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
+                ? "ABERTO"
+                : String(resistencia, 3);
+        resultDoc["esperado"] = "ABERTO";
+        resultDoc["passou"] =
+            (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0);
+        sendJsonResponse(resultDoc);
+
+        testeAtual++;
+    }
+
+    // Depois todos os contatos NA energizados (devem ter baixa resistência)
+    for (int i = 0; i < numContatosNA; i++) {
         if (!deviceConnected)
             return;
 
@@ -519,11 +639,11 @@ void executarTesteConfiguravel(const TestConfig& config) {
         // Realiza medição
         float resistencia = medirResistencia();
 
-        // Envia resultado
+        // Envia resultado - NA energizado deve ter baixa resistência
         StaticJsonDocument<200> resultDoc;
         resultDoc["status"] = "test_result";
         resultDoc["testIndex"] = testeAtual;
-        resultDoc["par"] = contato;
+        resultDoc["contato"] = contato;
         resultDoc["estado"] = "ENERGIZADO";
         resultDoc["resistencia"] =
             (resistencia > LIMITE_RESISTENCIA_ABERTO || resistencia < 0)
@@ -531,7 +651,8 @@ void executarTesteConfiguravel(const TestConfig& config) {
                 : String(resistencia, 3);
         resultDoc["esperado"] = "BAIXA";
         resultDoc["passou"] =
-            (resistencia >= 0 && resistencia <= LIMITE_RESISTENCIA_ABERTO);
+            (resistencia >= 0 &&
+             resistencia <= 10.0);  // Ajuste do limite para baixa resistência
         sendJsonResponse(resultDoc);
 
         testeAtual++;
@@ -573,13 +694,13 @@ void handleCommand(const JsonDocument& doc) {
 
         TestConfig config;
         config.tipoAcionamento = doc["tipoAcionamento"].as<String>();
-        config.quantidadePares = doc["quantidadePares"];
+        config.quantidadeContatos = doc["quantidadeContatos"];
         config.calibracao = doc["calibracao"].as<JsonArrayConst>();
 
         Serial.println("Configuração do teste:");
         Serial.println("- Tipo de Acionamento: " + config.tipoAcionamento);
-        Serial.println("- Quantidade de Pares: " +
-                       String(config.quantidadePares));
+        Serial.println("- Quantidade de Contatos: " +
+                       String(config.quantidadeContatos));
         Serial.println("- Tamanho array calibração: " +
                        String(config.calibracao.size()));
 

@@ -222,33 +222,40 @@ document.addEventListener("DOMContentLoaded", () => {
                 case "test_init": {
                     // Inicializa todos os indicadores baseado no totalTests do ESP32
                     const totalTests = json.totalTests;
-                    const numContatos = state.currentModule.quantidadePares;
+                    const numContatos = state.currentModule.quantidadeContatos;
                     
                     // Limpa e cria a quantidade correta de indicadores
                     ui.testIndicatorsContainer.innerHTML = "";
                     
                     if (numContatos === 1) {
-                        // Caso especial: 1 contato tem 2 testes
+                        // Caso especial: 1 contato tem 2 testes (COM-N# desenergizado e energizado)
                         ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">COM-N# Des</div>`;
                         ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">COM-N# Ene</div>`;
                     } else {
-                        // Para múltiplos contatos: primeiro todos desenergizados, depois todos energizados
-                        // Alterna entre NF e NA baseado no índice
-                        for (let i = 0; i < numContatos; i++) {
-                            const isNF = (i % 2 === 0);  // Par = NF, Ímpar = NA
-                            const tipoContato = isNF ? "NF" : "NA";
-                            const numeroContato = Math.floor(i / 2) + 1;
-                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">${tipoContato}${numeroContato} Des</div>`;
+                        // Para múltiplos contatos: calcula quantos contatos NF e NA
+                        const numContatosNF = Math.floor(numContatos / 2);
+                        const numContatosNA = Math.floor(numContatos / 2);
+                        
+                        // Fase 1: Todos os contatos NF desenergizados
+                        for (let i = 0; i < numContatosNF; i++) {
+                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i + 1} Des</div>`;
                         }
-                        // Fase 2: Energizado - mesma alternância
-                        for (let i = 0; i < numContatos; i++) {
-                            const isNF = (i % 2 === 0);  // Par = NF, Ímpar = NA
-                            const tipoContato = isNF ? "NF" : "NA";
-                            const numeroContato = Math.floor(i / 2) + 1;
-                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">${tipoContato}${numeroContato} Ene</div>`;
+                        // Fase 2: Todos os contatos NA desenergizados
+                        for (let i = 0; i < numContatosNA; i++) {
+                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i + 1} Des</div>`;
+                        }
+                        // Fase 3: Todos os contatos NF energizados
+                        for (let i = 0; i < numContatosNF; i++) {
+                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i + 1} Ene</div>`;
+                        }
+                        // Fase 4: Todos os contatos NA energizados
+                        for (let i = 0; i < numContatosNA; i++) {
+                            ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i + 1} Ene</div>`;
                         }
                     }
                     
+                    ui.testIndicatorsContainer.classList.remove("hidden");
+                    // A tabela já foi criada em setupTestIndicators, não sobrescrever
                     break;
                 }
 
@@ -277,8 +284,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (json.status === "test_step") {
                         const pairNumber = json.pair; // 0-indexed
                         const isAcionado = json.state === "ACIONADO";
-                        const numPairs = state.currentModule ? state.currentModule.quantidadePares : 0;
-                        const currentIndex = isAcionado ? numPairs + pairNumber : pairNumber;
+                        const numContatos = state.currentModule ? state.currentModule.quantidadeContatos : 0;
+                        const currentIndex = isAcionado ? numContatos + pairNumber : pairNumber;
                         const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
 
                         indicators.forEach((indicator, index) => {
@@ -324,13 +331,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 case "calibration_result": {
-                    ui.progressStatusText.innerHTML += `<p>Par #${json.par} calibrado: ${json.valor.toFixed(3)} Ω</p>`;
+                    ui.progressStatusText.innerHTML += `<p>Contato #${json.contato} calibrado: ${json.valor.toFixed(3)} Ω</p>`;
                     break;
                 }
 
                 case "test_result": {
                     const resultData = { 
-                        par: json.par, 
+                        contato: json.contato, 
                         estado: json.estado, 
                         resistencia: json.resistencia,
                         esperado: json.esperado,
@@ -338,53 +345,45 @@ document.addEventListener("DOMContentLoaded", () => {
                     };
                     state.testResults.push(resultData);
 
-                    // Atualiza a tabela de resultados
+                    // Atualiza a tabela de resultados se existir
                     let rowId;
-                    if (json.par.includes("COM-N#")) {
-                        // Caso especial de 1 par
+                    if (json.contato.includes("COM-N#")) {
+                        // Caso especial de 1 contato
                         rowId = `result-row-COM-N#-1-${json.estado}`;
                     } else {
                         // Caso normal - O Arduino envia formato "COM-NF1" ou "COM-NA1"
                         // Converte para "result-row-COM-NF1-DESENERGIZADO" ou "result-row-COM-NA1-ENERGIZADO"
-                        rowId = `result-row-${json.par}-${json.estado}`;
+                        rowId = `result-row-${json.contato}-${json.estado}`;
                     }
-                    
+
                     const row = document.getElementById(rowId);
                     if (row) {
-                        const resistanceCell = row.cells[2];
-                        const resultCell = row.cells[4];
+                        const resistanceCell = row.querySelector('.resistance-value');
+                        const statusCell = row.querySelector('.status-value');
                         
-                        resistanceCell.textContent = resultData.resistencia;
-                        
-                        if (resultData.esperado === "VARIÁVEL") {
-                            // Caso especial: apenas mostra o valor medido
-                            resultCell.textContent = "MEDIDO";
-                            resultCell.style.color = "var(--primary-color)";
-                            resultCell.style.fontWeight = "bold";
-                        } else {
-                            // Caso normal: mostra se passou ou falhou
-                            resultCell.textContent = resultData.passou ? "✓ PASSOU" : "✗ FALHOU";
-                            
-                            // Aplica cores baseado no resultado
-                            if (resultData.passou) {
-                                resistanceCell.style.color = "var(--success-color)";
-                                resultCell.style.color = "var(--success-color)";
-                                resultCell.style.fontWeight = "bold";
-                            } else {
-                                resistanceCell.style.color = "var(--danger-color)";
-                                resultCell.style.color = "var(--danger-color)";
-                                resultCell.style.fontWeight = "bold";
-                            }
+                        if (resistanceCell) {
+                            resistanceCell.textContent = json.resistencia;
+                        }
+                        if (statusCell) {
+                            statusCell.textContent = json.passou ? "PASSOU" : "FALHOU";
+                            statusCell.className = `status-value ${json.passou ? 'status-pass' : 'status-fail'}`;
                         }
                     }
 
-                    // Atualiza o indicador para azul (concluído)
-                    if (json.testIndex !== undefined) {
-                        const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
-                        if (indicators[json.testIndex]) {
-                            indicators[json.testIndex].className = "test-indicator status-done";
+                    // Atualiza o status do indicador atual para "concluído"
+                    const testIndex = json.testIndex;
+                    const indicators = ui.testIndicatorsContainer.querySelectorAll(".test-indicator");
+                    
+                    indicators.forEach((indicator, index) => {
+                        if (index < testIndex) {
+                            indicator.className = "test-indicator status-done";
+                        } else if (index === testIndex) {
+                            indicator.className = "test-indicator status-done";
+                        } else {
+                            indicator.className = "test-indicator status-pending";
                         }
-                    }
+                    });
+
                     break;
                 }
 
@@ -418,7 +417,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     indicators.forEach(ind => ind.className = "test-indicator status-done");
 
                     // Verifica se é caso especial (1 par)
-                    const isSpecialCase = state.currentModule.quantidadePares === 1;
+                    const isSpecialCase = state.currentModule.quantidadeContatos === 1;
                     
                     let overallStatus;
                     if (isSpecialCase) {
@@ -464,7 +463,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ui.managementTitle.textContent = state.currentModule.nome;
         const actuationTypeName = state.currentModule.tipoAcionamento === "TIPO_PADRAO" ? "Padrão (Tensão Contínua)" : "Com Travamento (Pulso)";
         ui.manageRelayType.textContent = actuationTypeName;
-        ui.manageTerminals.textContent = state.currentModule.quantidadePares;
+        ui.manageTerminals.textContent = state.currentModule.quantidadeContatos;
         const calDate = state.currentModule.calibracao?.data;
         ui.manageCalibrationDate.textContent = calDate ? new Date(calDate).toLocaleString("pt-BR") : "Pendente";
         ui.startTestButton.disabled = !calDate;
@@ -482,7 +481,7 @@ document.addEventListener("DOMContentLoaded", () => {
         
         await sendJsonCommand({ 
             comando: "calibrar", 
-            numTerminais: state.currentModule.quantidadePares 
+            numTerminais: state.currentModule.quantidadeContatos 
         });
     }
 
@@ -496,11 +495,11 @@ document.addEventListener("DOMContentLoaded", () => {
         ui.progressTitle.textContent = "Executando Teste...";
         ui.testResultActions.classList.add("hidden");
 
-        const numPairs = state.currentModule.quantidadePares;
+        const numContatos = state.currentModule.quantidadeContatos;
         ui.testIndicatorsContainer.innerHTML = "";
         
-        // Caso especial: apenas 1 par
-        if (numPairs === 1) {
+        // Caso especial: apenas 1 contato
+        if (numContatos === 1) {
             // Cria indicadores para o teste especial
             ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">COM-N# Des</div>`;
             ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">COM-N# Ene</div>`;
@@ -521,25 +520,37 @@ document.addEventListener("DOMContentLoaded", () => {
             tableHTML += `<tr id="result-row-COM-N#-1-DESENERGIZADO">
                 <td>COM-N# 1</td>
                 <td>DESENERGIZADO</td>
-                <td>--</td>
+                <td class="resistance-value">--</td>
                 <td>VARIÁVEL</td>
-                <td>--</td>
+                <td class="status-value">--</td>
             </tr>`;
             tableHTML += `<tr id="result-row-COM-N#-1-ENERGIZADO">
                 <td>COM-N# 1</td>
                 <td>ENERGIZADO</td>
-                <td>--</td>
+                <td class="resistance-value">--</td>
                 <td>VARIÁVEL</td>
-                <td>--</td>
+                <td class="status-value">--</td>
             </tr>`;
             tableHTML += "</tbody></table>";
             ui.progressStatusText.innerHTML = tableHTML;
         } else {
-            // Para múltiplos contatos
-            for (let i = 0; i < numPairs; i++) {
+            // Para múltiplos contatos - ordem correta do teste
+            // Exemplo: relé 5 terminais com 2 contatos = 1 NF + 1 NA
+            // Sequência: NF1 Des -> NA1 Des -> [aciona] -> NF1 Ene -> NA1 Ene
+            const numContatosNF = numContatos / 2;
+            const numContatosNA = numContatos / 2;
+            
+            // Indicadores na ordem correta: NF desenergizado, NA desenergizado, NF energizado, NA energizado
+            for (let i = 0; i < numContatosNF; i++) {
                 ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i+1} Des</div>`;
             }
-            for (let i = 0; i < numPairs; i++) {
+            for (let i = 0; i < numContatosNA; i++) {
+                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i+1} Des</div>`;
+            }
+            for (let i = 0; i < numContatosNF; i++) {
+                ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NF${i+1} Ene</div>`;
+            }
+            for (let i = 0; i < numContatosNA; i++) {
                 ui.testIndicatorsContainer.innerHTML += `<div class="test-indicator status-pending">NA${i+1} Ene</div>`;
             }
             ui.testIndicatorsContainer.classList.remove("hidden");
@@ -556,25 +567,48 @@ document.addEventListener("DOMContentLoaded", () => {
                 </thead>
                 <tbody>`;
             
-            // Cria linhas para teste desenergizado (contatos NF)
-            for (let i = 0; i < numPairs; i++) {
+            // Ordem correta: primeiro todos desenergizados, depois todos energizados
+            // 1. Contatos NF desenergizados (devem ter baixa resistência)
+            for (let i = 0; i < numContatosNF; i++) {
                 tableHTML += `<tr id="result-row-COM-NF${i+1}-DESENERGIZADO">
                     <td>COM-NF${i+1}</td>
                     <td>DESENERGIZADO</td>
-                    <td>--</td>
+                    <td class="resistance-value">--</td>
                     <td>BAIXA</td>
-                    <td>--</td>
+                    <td class="status-value">--</td>
                 </tr>`;
             }
             
-            // Cria linhas para teste energizado (contatos NA)  
-            for (let i = 0; i < numPairs; i++) {
+            // 2. Contatos NA desenergizados (devem estar abertos)
+            for (let i = 0; i < numContatosNA; i++) {
+                tableHTML += `<tr id="result-row-COM-NA${i+1}-DESENERGIZADO">
+                    <td>COM-NA${i+1}</td>
+                    <td>DESENERGIZADO</td>
+                    <td class="resistance-value">--</td>
+                    <td>ABERTO</td>
+                    <td class="status-value">--</td>
+                </tr>`;
+            }
+            
+            // 3. Contatos NF energizados (devem estar abertos)
+            for (let i = 0; i < numContatosNF; i++) {
+                tableHTML += `<tr id="result-row-COM-NF${i+1}-ENERGIZADO">
+                    <td>COM-NF${i+1}</td>
+                    <td>ENERGIZADO</td>
+                    <td class="resistance-value">--</td>
+                    <td>ABERTO</td>
+                    <td class="status-value">--</td>
+                </tr>`;
+            }
+            
+            // 4. Contatos NA energizados (devem ter baixa resistência)
+            for (let i = 0; i < numContatosNA; i++) {
                 tableHTML += `<tr id="result-row-COM-NA${i+1}-ENERGIZADO">
                     <td>COM-NA${i+1}</td>
                     <td>ENERGIZADO</td>
-                    <td>--</td>
+                    <td class="resistance-value">--</td>
                     <td>BAIXA</td>
-                    <td>--</td>
+                    <td class="status-value">--</td>
                 </tr>`;
             }
             
@@ -587,7 +621,7 @@ document.addEventListener("DOMContentLoaded", () => {
         await sendJsonCommand({
             comando: "iniciar_teste",
             tipoAcionamento: state.currentModule.tipoAcionamento,
-            quantidadePares: state.currentModule.quantidadePares,
+            quantidadeContatos: state.currentModule.quantidadeContatos,
             calibracao: state.currentModule.calibracao.valores,
         });
     }
@@ -623,9 +657,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const moduleData = {
             nome: ui.moduleNameInput.value.trim(),
             tipoAcionamento: ui.moduleActuationTypeSelect.value,
-            quantidadePares: parseInt(ui.moduleTerminalsInput.value),
+            quantidadeContatos: parseInt(ui.moduleTerminalsInput.value),
         };
-        if (!moduleData.nome || !moduleData.tipoAcionamento || !moduleData.quantidadePares) {
+        if (!moduleData.nome || !moduleData.tipoAcionamento || !moduleData.quantidadeContatos) {
             showGlobalAlert("Por favor, preencha todos os campos.", "error");
             return;
         }
@@ -697,7 +731,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ui.moduleIdInput.value = state.currentModule.id;
             ui.moduleNameInput.value = state.currentModule.nome;
             ui.moduleActuationTypeSelect.value = state.currentModule.tipoAcionamento;
-            ui.moduleTerminalsInput.value = state.currentModule.quantidadePares;
+            ui.moduleTerminalsInput.value = state.currentModule.quantidadeContatos;
         } else {
             ui.moduleTerminalsInput.value = "1";
         }
@@ -748,7 +782,36 @@ document.addEventListener("DOMContentLoaded", () => {
                     </thead>
                     <tbody>`;
                 
-                entry.resultados.forEach((res) => {
+                // Ordena os resultados na ordem correta do teste
+                const orderedResults = entry.resultados.sort((a, b) => {
+                    // Função para determinar a ordem baseada no contato e estado
+                    const getOrder = (res) => {
+                        if (res.contato.includes("COM-N#")) {
+                            // Caso especial de 1 contato
+                            return res.estado === "DESENERGIZADO" ? 0 : 1;
+                        }
+                        
+                        // Extrai o número do contato (ex: "COM-NF1" -> 1)
+                        const contatoMatch = res.contato.match(/(\d+)/);
+                        const numero = contatoMatch ? parseInt(contatoMatch[1]) : 0;
+                        
+                        // Ordem: NF desenergizado, NA desenergizado, NF energizado, NA energizado
+                        if (res.contato.includes("NF") && res.estado === "DESENERGIZADO") {
+                            return (numero - 1) * 4 + 0; // NF desenergizado
+                        } else if (res.contato.includes("NA") && res.estado === "DESENERGIZADO") {
+                            return (numero - 1) * 4 + 1; // NA desenergizado
+                        } else if (res.contato.includes("NF") && res.estado === "ENERGIZADO") {
+                            return (numero - 1) * 4 + 2; // NF energizado
+                        } else if (res.contato.includes("NA") && res.estado === "ENERGIZADO") {
+                            return (numero - 1) * 4 + 3; // NA energizado
+                        }
+                        return 999; // Fallback
+                    };
+                    
+                    return getOrder(a) - getOrder(b);
+                });
+                
+                orderedResults.forEach((res) => {
                     const esperado = res.esperado || "N/A";
                     let passou, resultColor;
                     
@@ -764,7 +827,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                     
                     tableHTML += `<tr>
-                        <td>${res.par}</td>
+                        <td>${res.contato}</td>
                         <td>${res.estado}</td>
                         <td>${res.resistencia}</td>
                         <td>${esperado}</td>
