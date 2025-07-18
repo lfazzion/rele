@@ -430,6 +430,24 @@ input:checked + .slider:before {
     font-weight: 600;
 }
 
+/* --- Estilos para as células coloridas da tabela --- */
+.results-table .resistance-value {
+    font-family: monospace;
+    font-weight: 500;
+}
+
+.results-table .status-value {
+    font-weight: bold;
+}
+
+.results-table .status-value.status-pass {
+    color: var(--success-color);
+}
+
+.results-table .status-value.status-fail {
+    color: var(--danger-color);
+}
+
 /* --- NOVO: Indicadores de Teste --- */
 #test-indicators-container {
     display: flex;

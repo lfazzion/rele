@@ -89,7 +89,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // =================================================================
 
     function showGlobalAlert(message, type = "info", buttons = [{ text: "OK" }]) {
-        ui.alertMessage.textContent = message;
+        // Verifica se a mensagem contém HTML
+        if (message.includes('<')) {
+            ui.alertMessage.innerHTML = message;
+        } else {
+            ui.alertMessage.textContent = message;
+        }
         ui.globalAlert.querySelector(".alert-box").className = `alert-box alert-${type}`;
         ui.alertActions.innerHTML = "";
         if (buttons && buttons.length > 0) {
@@ -173,10 +178,10 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             updateConnectionStatus("connecting");
             
-            // Timeout para a conexão
+            // Timeout otimizado para conexão
             connectionTimeout = setTimeout(() => {
                 throw new Error("Timeout na conexão");
-            }, 15000);
+            }, 20000);  // Aumentado para 20 segundos
 
             bleDevice = await navigator.bluetooth.requestDevice({
                 filters: [
@@ -184,10 +189,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     { namePrefix: "Jiga" }
                 ],
                 optionalServices: [BLE_SERVICE_UUID],
+                acceptAllDevices: false  // Explicitamente false para melhor performance
             });
 
             bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
             
+            // Configurações otimizadas para conexão
             const server = await bleDevice.gatt.connect();
             const service = await server.getPrimaryService(BLE_SERVICE_UUID);
             
@@ -281,12 +288,26 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         
         const commandString = JSON.stringify(json);
+        
+        // Verifica se o comando não é muito grande
+        if (commandString.length > 512) {
+            console.error("Comando muito grande:", commandString.length);
+            showGlobalAlert("Comando muito grande para enviar.", "error");
+            return false;
+        }
+        
         const maxAttempts = 3;
         
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
+                // Verifica se ainda está conectado
+                if (!bleDevice || !bleDevice.gatt.connected) {
+                    throw new Error("Dispositivo desconectado");
+                }
+                
                 await sendCharacteristic.writeValueWithoutResponse(new TextEncoder().encode(commandString));
                 return true;
+                
             } catch (error) {
                 console.error(`Tentativa ${attempt} falhou ao enviar comando:`, error);
                 
@@ -295,8 +316,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     return false;
                 }
                 
-                // Aguarda antes de tentar novamente
-                await new Promise(resolve => setTimeout(resolve, 500));
+                // Aguarda progressivamente mais tempo entre tentativas
+                await new Promise(resolve => setTimeout(resolve, 200 * attempt));
             }
         }
         
@@ -403,7 +424,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                     
                     showGlobalAlert(message, "prompt", [{
-                        text: "Pronto, medir",
+                        text: "OK",
                         class: "btn btn-primary",
                         action: sendConfirmation,
                     }]);
@@ -480,8 +501,26 @@ document.addEventListener("DOMContentLoaded", () => {
                             resistanceCell.textContent = json.resistencia;
                         }
                         if (statusCell) {
-                            statusCell.textContent = json.passou ? "PASSOU" : "FALHOU";
-                            statusCell.className = `status-value ${json.passou ? 'status-pass' : 'status-fail'}`;
+                            if (json.esperado === "VARIÁVEL") {
+                                // Caso especial: apenas mostra o valor medido
+                                statusCell.textContent = "MEDIDO";
+                                statusCell.style.color = "var(--primary-color)";
+                                statusCell.style.fontWeight = "bold";
+                            } else {
+                                // Caso normal: mostra se passou ou falhou
+                                statusCell.textContent = json.passou ? "✓ PASSOU" : "✗ FALHOU";
+                                
+                                // Aplica cores baseado no resultado
+                                if (json.passou) {
+                                    resistanceCell.style.color = "var(--success-color)";
+                                    statusCell.style.color = "var(--success-color)";
+                                    statusCell.style.fontWeight = "bold";
+                                } else {
+                                    resistanceCell.style.color = "var(--danger-color)";
+                                    statusCell.style.color = "var(--danger-color)";
+                                    statusCell.style.fontWeight = "bold";
+                                }
+                            }
                         }
                     }
 
@@ -550,6 +589,78 @@ document.addEventListener("DOMContentLoaded", () => {
                         hideGlobalAlert();
                         selectModule(state.currentModule.id, updatedModule);
                     }, 5000); // Aumentado para 5 segundos para dar tempo de ler
+                    break;
+                }
+
+                case "calibration_warning": {
+                    // Mostra aviso temporário sem interromper o processo
+                    ui.progressStatusText.innerHTML = `
+                        <h4 style="color: var(--warning-color);">⚠️ ${json.message}</h4>
+                        <p>A calibração está em andamento, mas com dificuldades na leitura.</p>
+                        <p>Verifique se os fios estão bem conectados em curto-circuito.</p>
+                    `;
+                    break;
+                }
+
+                case "calibration_error": {
+                    hideGlobalAlert();
+                    
+                    // Mostra erro de calibração
+                    const mensagemErro = `
+                        <div style="text-align: center;">
+                            <h3 style="color: var(--danger-color); margin: 0 0 1rem 0;">
+                                ❌ Erro na Calibração
+                            </h3>
+                            <p style="margin: 0.5rem 0;">
+                                ${json.message}
+                            </p>
+                            <p style="margin: 1rem 0 0 0; font-size: 0.9rem; color: var(--light-text-color);">
+                                Verifique se os fios estão conectados corretamente em curto-circuito e tente novamente.
+                            </p>
+                        </div>
+                    `;
+                    
+                    showGlobalAlert(mensagemErro, "error", [
+                        { text: "Tentar Novamente", class: "btn btn-primary", action: () => {
+                            hideGlobalAlert();
+                            startCalibration();
+                        }},
+                        { text: "Voltar", class: "btn btn-secondary", action: () => {
+                            hideGlobalAlert();
+                            showScreen(ui.moduleManagementScreen);
+                        }}
+                    ]);
+                    break;
+                }
+
+                case "test_error": {
+                    hideGlobalAlert();
+                    
+                    // Mostra erro de teste
+                    const mensagemErro = `
+                        <div style="text-align: center;">
+                            <h3 style="color: var(--danger-color); margin: 0 0 1rem 0;">
+                                ❌ Erro no Teste
+                            </h3>
+                            <p style="margin: 0.5rem 0;">
+                                ${json.message}
+                            </p>
+                            <p style="margin: 1rem 0 0 0; font-size: 0.9rem; color: var(--light-text-color);">
+                                Verifique as conexões e tente novamente.
+                            </p>
+                        </div>
+                    `;
+                    
+                    showGlobalAlert(mensagemErro, "error", [
+                        { text: "Tentar Novamente", class: "btn btn-primary", action: () => {
+                            hideGlobalAlert();
+                            startTest();
+                        }},
+                        { text: "Voltar", class: "btn btn-secondary", action: () => {
+                            hideGlobalAlert();
+                            showScreen(ui.moduleManagementScreen);
+                        }}
+                    ]);
                     break;
                 }
 
@@ -852,18 +963,36 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function deleteModule() {
         if (!state.currentModule) return;
-        const confirmDelete = () => {
-            database
-                .ref(`modulos/${state.currentModule.id}`)
-                .remove()
-                .then(() => {
-                    state.currentModule = null;
-                    showScreen(ui.moduleSelectionScreen)
-                })
-                .catch((error) => {
-                    console.error("Erro ao excluir módulo:", error);
-                    showGlobalAlert("Falha ao excluir o módulo.", "error");
+        const confirmDelete = async () => {
+            try {
+                // Primeiro, exclui todo o histórico relacionado ao módulo
+                const historyRef = database.ref("verificacoes").orderByChild("moduloId").equalTo(state.currentModule.id);
+                const historySnapshot = await historyRef.once("value");
+                
+                // Remove cada entrada do histórico
+                const historyPromises = [];
+                historySnapshot.forEach((childSnapshot) => {
+                    historyPromises.push(childSnapshot.ref.remove());
                 });
+                
+                // Aguarda todas as exclusões do histórico
+                await Promise.all(historyPromises);
+                
+                // Depois exclui o módulo
+                await database.ref(`modulos/${state.currentModule.id}`).remove();
+                
+                // Sucesso - fecha o modal e volta para a seleção
+                hideGlobalAlert();
+                state.currentModule = null;
+                showScreen(ui.moduleSelectionScreen);
+                
+                console.log("Módulo e histórico excluídos com sucesso.");
+                
+            } catch (error) {
+                console.error("Erro ao excluir módulo:", error);
+                hideGlobalAlert();
+                showGlobalAlert("Falha ao excluir o módulo.", "error");
+            }
         };
         showGlobalAlert(
             `Tem certeza que deseja excluir o módulo "${state.currentModule.nome}"?`,
@@ -1000,7 +1129,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     tableHTML += `<tr>
                         <td>${res.contato}</td>
                         <td>${res.estado}</td>
-                        <td>${res.resistencia}</td>
+                        <td style="${resultColor}; font-family: monospace; font-weight: 500;">${res.resistencia}</td>
                         <td>${esperado}</td>
                         <td style="${resultColor}; font-weight: bold;">${passou}</td>
                     </tr>`;
