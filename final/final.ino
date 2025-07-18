@@ -43,12 +43,21 @@
 // --- Objetos e Variáveis Globais ---
 ADS1115 ADS(0x48);
 BLECharacteristic* pSendCharacteristic;
+BLEServer* pServer;
 bool deviceConnected = false;
+bool oldDeviceConnected = false;
 
 // Variáveis para comunicação assíncrona e controle de fluxo
 volatile bool g_comandoRecebidoFlag = false;
 volatile bool g_aguardandoConfirmacao = false;
 String g_comandoJson;
+
+// Variáveis para estabilidade da conexão
+unsigned long lastHeartbeat = 0;
+const unsigned long HEARTBEAT_INTERVAL = 10000;  // 10 segundos
+unsigned long lastConnectionCheck = 0;
+const unsigned long CONNECTION_CHECK_INTERVAL = 1000;  // 1 segundo
+bool connectionLost = false;
 
 // Variáveis de medição
 float res[2][8] = {0.0};
@@ -126,16 +135,34 @@ void action_relay(int relay_action) {
 // FUNÇÕES DE COMUNICAÇÃO BLE
 // =================================================================
 
-void sendJsonResponse(const JsonDocument& doc) {
-    if (deviceConnected) {
-        String jsonString;
-        serializeJson(doc, jsonString);
-        pSendCharacteristic->setValue(jsonString.c_str());
-        pSendCharacteristic->notify();
-        Serial.println("JSON enviado: " + jsonString);
+bool sendJsonResponse(const JsonDocument& doc) {
+    if (deviceConnected && pSendCharacteristic) {
+        try {
+            String jsonString;
+            serializeJson(doc, jsonString);
+
+            // Verifica se o tamanho da mensagem não excede o limite BLE
+            if (jsonString.length() > 512) {
+                Serial.println("AVISO: Mensagem muito longa, truncando...");
+                jsonString = jsonString.substring(0, 512);
+            }
+
+            pSendCharacteristic->setValue(jsonString.c_str());
+            pSendCharacteristic->notify();
+            Serial.println("JSON enviado: " + jsonString);
+
+            // Pequeno delay para evitar sobrecarregar o buffer BLE
+            delay(10);
+
+            return true;
+        } catch (...) {
+            Serial.println("Erro ao enviar JSON - exception capturada");
+            return false;
+        }
     } else {
         Serial.println(
             "Dispositivo não conectado - não foi possível enviar JSON");
+        return false;
     }
 }
 
@@ -144,6 +171,39 @@ void sendError(const String& message) {
     doc["status"] = "error";
     doc["message"] = message;
     sendJsonResponse(doc);
+}
+
+void sendHeartbeat() {
+    StaticJsonDocument<100> doc;
+    doc["status"] = "heartbeat";
+    doc["timestamp"] = millis();
+    sendJsonResponse(doc);
+}
+
+bool checkConnection() {
+    unsigned long currentTime = millis();
+
+    // Verifica se a conexão mudou de estado
+    if (deviceConnected != oldDeviceConnected) {
+        if (deviceConnected) {
+            Serial.println("Conexão estabelecida");
+            state_RGB('B');  // Verde - conectado
+            connectionLost = false;
+        } else {
+            Serial.println("Conexão perdida");
+            reset_output();
+            connectionLost = true;
+        }
+        oldDeviceConnected = deviceConnected;
+    }
+
+    // Envia heartbeat periodicamente
+    if (deviceConnected && (currentTime - lastHeartbeat > HEARTBEAT_INTERVAL)) {
+        sendHeartbeat();
+        lastHeartbeat = currentTime;
+    }
+
+    return deviceConnected;
 }
 
 /**
@@ -161,19 +221,30 @@ void aguardarBotaoJiga(String mensagem = "") {
     } else {
         promptDoc["message"] = "Pressione o botão na jiga para continuar";
     }
-    sendJsonResponse(promptDoc);
+
+    if (!sendJsonResponse(promptDoc)) {
+        Serial.println("Falha ao enviar prompt - conexão instável");
+        return;
+    }
 
     // Acende LED indicativo
     digitalWrite(LED_CONT, 1);
     state_RGB('O');  // Azul - aguardando
 
-    // Aguarda botão ser pressionado
+    // Aguarda botão ser pressionado com verificação de conexão
+    unsigned long startTime = millis();
     while (digitalRead(BUTTON) == 0) {
-        delay(10);
-        if (!deviceConnected) {
-            digitalWrite(LED_CONT, 0);
-            reset_output();
-            return;
+        delay(50);
+
+        // Verifica conexão a cada segundo
+        if (millis() - startTime > 1000) {
+            if (!checkConnection()) {
+                digitalWrite(LED_CONT, 0);
+                reset_output();
+                Serial.println("Conexão perdida durante aguardo do botão");
+                return;
+            }
+            startTime = millis();
         }
     }
 
@@ -183,7 +254,10 @@ void aguardarBotaoJiga(String mensagem = "") {
 
     StaticJsonDocument<100> confirmDoc;
     confirmDoc["status"] = "button_pressed";
-    sendJsonResponse(confirmDoc);
+
+    if (!sendJsonResponse(confirmDoc)) {
+        Serial.println("Falha ao enviar confirmação do botão");
+    }
 
     delay(500);  // Debounce
     Serial.println(">>> Botão pressionado! Continuando...");
@@ -196,9 +270,20 @@ void aguardarConfirmacaoWebApp() {
     Serial.println(">>> Aguardando confirmação da WebApp...");
     g_aguardandoConfirmacao = true;
 
+    unsigned long startTime = millis();
     while (g_aguardandoConfirmacao) {
-        delay(10);
-        if (!deviceConnected) {
+        delay(50);
+
+        // Timeout de 30 segundos
+        if (millis() - startTime > 30000) {
+            Serial.println("Timeout aguardando confirmação da WebApp");
+            g_aguardandoConfirmacao = false;
+            return;
+        }
+
+        // Verifica conexão
+        if (!checkConnection()) {
+            Serial.println("Conexão perdida durante aguardo de confirmação");
             g_aguardandoConfirmacao = false;
             return;
         }
@@ -226,6 +311,12 @@ void calibrate() {
 
     if (!deviceConnected)
         return;
+
+    // Verifica se a conexão ainda está ativa antes de prosseguir
+    if (!checkConnection()) {
+        Serial.println("Conexão perdida durante calibração");
+        return;
+    }
 
     // Envia status de processamento
     statusDoc["status"] = "calibration_processing";
@@ -740,7 +831,10 @@ class MyServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
         deviceConnected = true;
         Serial.println("Cliente conectado via BLE");
-        state_RGB('B');  // Verde - conectado
+
+        // Resetar flags de heartbeat
+        lastHeartbeat = millis();
+        lastConnectionCheck = millis();
     }
 
     void onDisconnect(BLEServer* pServer) {
@@ -748,10 +842,14 @@ class MyServerCallbacks : public BLEServerCallbacks {
         Serial.println("Cliente desconectado");
         reset_output();
 
+        // Resetar estado de aguardo se necessário
+        g_aguardandoConfirmacao = false;
+        g_comandoRecebidoFlag = false;
+
         // Pequena pausa antes de reiniciar o advertising
         delay(500);
 
-        // Reinicia o advertising
+        // Reinicia o advertising automaticamente
         BLEDevice::startAdvertising();
         Serial.println(
             "Advertising reiniciado - Dispositivo disponível novamente");
@@ -785,42 +883,53 @@ void setup() {
 
     // Inicializa BLE
     BLEDevice::init("Jiga-Teste-Reles");
-    BLEServer* pServer = BLEDevice::createServer();
+
+    // Configurações para maior estabilidade
+    BLEDevice::setMTU(512);
+    BLEDevice::setPower(ESP_PWR_LVL_P9);
+
+    pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());
 
     BLEService* pService = pServer->createService(BLE_SERVICE_UUID);
 
     // Característica para receber comandos (WebApp -> ESP32)
     BLECharacteristic* pReceiveCharacteristic = pService->createCharacteristic(
-        BLE_RECEIVE_CHARACTERISTIC_UUID, BLECharacteristic::PROPERTY_WRITE);
+        BLE_RECEIVE_CHARACTERISTIC_UUID,
+        BLECharacteristic::PROPERTY_WRITE |
+            BLECharacteristic::PROPERTY_WRITE_NR);
     pReceiveCharacteristic->setCallbacks(new MyCharacteristicCallbacks());
 
     // Característica para enviar respostas (ESP32 -> WebApp)
     pSendCharacteristic = pService->createCharacteristic(
-        BLE_SEND_CHARACTERISTIC_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+        BLE_SEND_CHARACTERISTIC_UUID,
+        BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ);
     pSendCharacteristic->addDescriptor(new BLE2902());
 
     pService->start();
 
-    // Inicia advertising com configurações corretas para Web Bluetooth
+    // Inicia advertising com configurações otimizadas para estabilidade
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
     pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x06);  // intervalo mínimo de conexão
-    pAdvertising->setMaxPreferred(0x12);  // intervalo máximo de conexão
 
-    // Configurações adicionais para melhor compatibilidade
+    // Configurações de advertising otimizadas
+    pAdvertising->setMinPreferred(0x06);  // 7.5ms - intervalo mínimo de conexão
+    pAdvertising->setMaxPreferred(
+        0x12);  // 22.5ms - intervalo máximo de conexão
     pAdvertising->setAdvertisementType(ADV_TYPE_IND);
-    pAdvertising->setMinInterval(0x20);  // 20ms
-    pAdvertising->setMaxInterval(0x40);  // 40ms
+    pAdvertising->setMinInterval(
+        0x20);  // 20ms - intervalo mínimo de advertising
+    pAdvertising->setMaxInterval(
+        0x40);  // 40ms - intervalo máximo de advertising
 
     BLEDevice::startAdvertising();
 
-    Serial.println("Dispositivo BLE iniciado - Aguardando conexão...");
-    Serial.println("Nome: Jiga-Teste-Reles");
     Serial.println(
-        "UUID do Serviço: " +
-        String(BLE_SERVICE_UUID));  // Verifica se o ADS1115 está conectado
+        "Dispositivo BLE iniciado com configurações otimizadas - Aguardando "
+        "conexão...");
+    Serial.println("Nome: Jiga-Teste-Reles");
+    Serial.println("UUID do Serviço: " + String(BLE_SERVICE_UUID));
     if (ADS.isConnected()) {
         Serial.println("ADS1115 conectado com sucesso");
         state_RGB('O');  // Azul - pronto para conectar
@@ -831,6 +940,9 @@ void setup() {
 }
 
 void loop() {
+    // Verifica estado da conexão
+    checkConnection();
+
     // Processa comandos recebidos via BLE
     if (g_comandoRecebidoFlag) {
         g_comandoRecebidoFlag = false;
@@ -843,9 +955,15 @@ void loop() {
                            String(error.c_str()));
             sendError("JSON inválido: " + String(error.c_str()));
         } else {
-            handleCommand(doc);
+            // Verifica se ainda está conectado antes de processar
+            if (deviceConnected) {
+                handleCommand(doc);
+            } else {
+                Serial.println("Comando ignorado - dispositivo desconectado");
+            }
         }
     }
 
-    delay(10);
+    // Delay otimizado para não sobrecarregar o sistema
+    delay(50);
 }

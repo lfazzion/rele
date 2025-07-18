@@ -70,6 +70,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- Estado da Aplicação ---
     let bleDevice = null;
     let sendCharacteristic = null;
+    let connectionRetryCount = 0;
+    let maxRetries = 3;
+    let connectionTimeout = null;
+    let heartbeatInterval = null;
+    let reconnectInterval = null;
+    let lastHeartbeat = 0;
+    
     let state = {
         currentModule: null,
         isEditing: false,
@@ -157,8 +164,20 @@ document.addEventListener("DOMContentLoaded", () => {
             bleDevice.gatt.disconnect();
             return;
         }
+        
+        connectionRetryCount = 0;
+        await attemptConnection();
+    }
+
+    async function attemptConnection() {
         try {
             updateConnectionStatus("connecting");
+            
+            // Timeout para a conexão
+            connectionTimeout = setTimeout(() => {
+                throw new Error("Timeout na conexão");
+            }, 15000);
+
             bleDevice = await navigator.bluetooth.requestDevice({
                 filters: [
                     { name: "Jiga-Teste-Reles" },
@@ -166,40 +185,122 @@ document.addEventListener("DOMContentLoaded", () => {
                 ],
                 optionalServices: [BLE_SERVICE_UUID],
             });
+
             bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
+            
             const server = await bleDevice.gatt.connect();
             const service = await server.getPrimaryService(BLE_SERVICE_UUID);
+            
             sendCharacteristic = await service.getCharacteristic(BLE_RECEIVE_CHARACTERISTIC_UUID);
             const notifyCharacteristic = await service.getCharacteristic(BLE_SEND_CHARACTERISTIC_UUID);
+            
             await notifyCharacteristic.startNotifications();
             notifyCharacteristic.addEventListener("characteristicvaluechanged", handleDataReceived);
+            
+            clearTimeout(connectionTimeout);
+            connectionRetryCount = 0;
+            
+            // Inicia monitoramento de heartbeat
+            startHeartbeatMonitoring();
+            
             updateConnectionStatus("connected");
+            
         } catch (error) {
+            clearTimeout(connectionTimeout);
             console.error("Erro na conexão BLE:", error);
-            showGlobalAlert("Falha ao conectar. Verifique se o dispositivo está ligado e acessível.", "error");
-            updateConnectionStatus("disconnected");
+            
+            if (connectionRetryCount < maxRetries) {
+                connectionRetryCount++;
+                showGlobalAlert(
+                    `Tentativa ${connectionRetryCount} de ${maxRetries} falhada. Tentando novamente...`, 
+                    "warning"
+                );
+                
+                // Aguarda antes de tentar novamente
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                return await attemptConnection();
+            } else {
+                showGlobalAlert(
+                    "Falha ao conectar após múltiplas tentativas. Verifique se o dispositivo está ligado e acessível.", 
+                    "error"
+                );
+                updateConnectionStatus("disconnected");
+            }
+        }
+    }
+
+    function startHeartbeatMonitoring() {
+        stopHeartbeatMonitoring();
+        
+        heartbeatInterval = setInterval(() => {
+            const now = Date.now();
+            // Se não recebeu heartbeat em 30 segundos, considera desconectado
+            if (lastHeartbeat > 0 && (now - lastHeartbeat > 30000)) {
+                console.warn("Heartbeat perdido - conexão pode estar instável");
+                if (bleDevice && bleDevice.gatt.connected) {
+                    // Tenta reestabelecer a conexão
+                    onDisconnected();
+                }
+            }
+        }, 5000);
+    }
+
+    function stopHeartbeatMonitoring() {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
         }
     }
 
     function onDisconnected() {
+        console.log("Dispositivo desconectado");
+        
         bleDevice = null;
         sendCharacteristic = null;
+        lastHeartbeat = 0;
+        
+        stopHeartbeatMonitoring();
+        
         updateConnectionStatus("disconnected");
-        showGlobalAlert("Dispositivo desconectado.", "error");
+        
+        // Tenta reconectar automaticamente após 5 segundos
+        if (!reconnectInterval) {
+            reconnectInterval = setTimeout(() => {
+                reconnectInterval = null;
+                if (confirm("Conexão perdida. Deseja tentar reconectar?")) {
+                    connectBLE();
+                }
+            }, 5000);
+        }
     }
 
     async function sendJsonCommand(json) {
         if (!sendCharacteristic) {
             showGlobalAlert("Não conectado. Conecte-se primeiro.", "error");
-            return;
+            return false;
         }
+        
         const commandString = JSON.stringify(json);
-        try {
-            await sendCharacteristic.writeValueWithoutResponse(new TextEncoder().encode(commandString));
-        } catch (error) {
-            console.error("Erro ao enviar comando:", error);
-            showGlobalAlert("Falha ao enviar comando para o dispositivo.", "error");
+        const maxAttempts = 3;
+        
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                await sendCharacteristic.writeValueWithoutResponse(new TextEncoder().encode(commandString));
+                return true;
+            } catch (error) {
+                console.error(`Tentativa ${attempt} falhou ao enviar comando:`, error);
+                
+                if (attempt === maxAttempts) {
+                    showGlobalAlert("Falha ao enviar comando após múltiplas tentativas.", "error");
+                    return false;
+                }
+                
+                // Aguarda antes de tentar novamente
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
         }
+        
+        return false;
     }
 
     /**
@@ -218,6 +319,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         try {
             const json = JSON.parse(receivedText);
+            
+            // Processa heartbeat
+            if (json.status === "heartbeat") {
+                lastHeartbeat = Date.now();
+                console.log("Heartbeat recebido");
+                return;
+            }
 
             switch (json.status) {
                 case "test_init": {
@@ -948,4 +1056,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     updateConnectionStatus("disconnected");
+    
+    // Limpa intervalos quando a página é fechada
+    window.addEventListener("beforeunload", () => {
+        stopHeartbeatMonitoring();
+        if (reconnectInterval) {
+            clearTimeout(reconnectInterval);
+        }
+        if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+        }
+    });
 });
