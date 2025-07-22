@@ -118,6 +118,7 @@ void calibrate(){
     }
     res_cal = res_cal / MEAN;
     is_calibrated = true;
+    Serial.println(res_cal, 4);
 }
 
 void read_res(int n, int relay_action) {
@@ -130,7 +131,8 @@ void read_res(int n, int relay_action) {
                 res[k][j] += get_res() - res_cal;
             }
             res[k][j] = res[k][j] / MEAN;
-            res_result = res_result+"C"+String(j+1)+String(k+1)+String(res[k][j])+";";
+            Serial.println(res[k][j]);
+            res_result = res_result+";C"+String(j+1)+String(k+1)+":"+String(res[k][j]);
         }
         action_relay(relay_action);
     }
@@ -145,11 +147,12 @@ void loop(){
     R -> Receber o resultado do relé;
     */
     if (SerialBT.available() > 0) {
-        String receivedData = SerialBT.readStringUntil('\n');
+        String receivedData = SerialBT.readString();
         receivedData.trim();
         char Op = receivedData[0];
         receivedData = receivedData.substring(1, receivedData.length());
-        
+        Serial.println(Op);
+        Serial.println(receivedData);
         if(Op == 'C'){
             if(is_configured){
                 calibrate();
@@ -169,7 +172,7 @@ void loop(){
                 }
                 SerialBT.println(erro);
             }
-        }else if(Op == 'V'){
+        }else if(Op == 'S'){
             is_calibrated = false;
             String type = receivedData.substring(receivedData.length() - 2);
             String contactsStr = receivedData.substring(0, receivedData.length() - 2);
