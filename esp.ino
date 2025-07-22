@@ -26,6 +26,7 @@ BluetoothSerial SerialBT;
 float res[2][8] = {0.0};
 float res_cal = 0.0;
 bool relay_state = 0;
+String res_result = "";
 
 // --- Variáveis Globais para controle de estado ---
 int num_contacts = 0;
@@ -33,17 +34,10 @@ int relay_to_use = 0;
 bool is_configured = false;
 bool is_calibrated = false;
 
-void setup() {
+void setup(){
     Serial.begin(115200);
-    
-    if (!SerialBT.begin("ESP32_Miliohmimetro")) {
-        Serial.println("Ocorreu um erro ao inicializar o Bluetooth");
-    } else {
-        Serial.println("Dispositivo Bluetooth pronto para parear!");
-        SerialBT.println("Aguardando configuração do App (ex: 8DC).");
-    }
-    
-    Wire.begin(); 
+    Wire.begin();
+    SerialBT.begin("ESP32_Miliohmimetro");
 
     pinMode(LED_CONT, OUTPUT);
     pinMode(RGB_RED, OUTPUT);
@@ -59,7 +53,27 @@ void setup() {
     ADS.setGain(1);
 }
 
-void reset_output() {
+void state_RGB(char state){
+    switch (state) {
+        case 'O':
+            digitalWrite(RGB_RED, 0);
+            digitalWrite(RGB_GREEN, 0);
+            digitalWrite(RGB_BLUE, 1);
+            break;
+        case 'B':
+            digitalWrite(RGB_RED, 0);
+            digitalWrite(RGB_GREEN, 1);
+            digitalWrite(RGB_BLUE, 0);
+            break;
+        case 'R':
+            digitalWrite(RGB_RED, 1);
+            digitalWrite(RGB_GREEN, 0);
+            digitalWrite(RGB_BLUE, 0);
+            break;
+    }
+}
+
+void reset_output(){
     digitalWrite(RGB_RED, 0);
     digitalWrite(RGB_GREEN, 0);
     digitalWrite(RGB_BLUE, 0);
@@ -67,7 +81,7 @@ void reset_output() {
     digitalWrite(RELAY_AC, 0);
 }
 
-float get_res() {
+float get_res(){
     if (ADS.isConnected()) {
         ADS.setDataRate(0); //  0 = slow   4 = medium   7 = fast
 
@@ -78,128 +92,104 @@ float get_res() {
 
         return (res_ref * volts) / volts_ref;
     } else {
-        Serial.println("ADS não encontrado");
-        SerialBT.println("ERRO: ADS não encontrado");
+        SerialBT.println("ERRO:A0");
         return 0.0;
     }
 }
 
-void action_relay(int relay_action) {
+void action_relay(int relay_action){
     relay_state = !relay_state;
     digitalWrite(relay_action, !relay_state);
 }
 
-void wait_confirmation() {
+void wait_confirmation(){
     // MENSAGEM ADICIONADA
     Serial.println("Aperte o botão!");
     digitalWrite(LED_CONT, 1);
-    while (digitalRead(BUTTON) == 0) {
-        delay(50);
-    }
+    while (digitalRead(BUTTON) == 0){}
     digitalWrite(LED_CONT, 0);
 }
 
-void calibrate() {
+void calibrate(){
     wait_confirmation();
     res_cal = 0.0;
     for (int i = 0; i < MEAN; i++) {
         res_cal += get_res();
     }
     res_cal = res_cal / MEAN;
-    is_calibrated = true; 
-    
-    // MENSAGEM ADICIONADA
-    Serial.print("Valor Calibração: ");
-    Serial.println(res_cal, 4); // Exibe com 4 casas decimais para precisão
+    is_calibrated = true;
 }
 
 void read_res(int n, int relay_action) {
+    res_result += "V";
     for (int k = 0; k < 2; k++) {
         for (int j = 0; j < n; j++) {
-            SerialBT.println("Pressione o botão para medir o contato " + String(j + 1));
             wait_confirmation();
             res[k][j] = 0.0;
             for (int i = 0; i < MEAN; i++) {
                 res[k][j] += get_res() - res_cal;
             }
             res[k][j] = res[k][j] / MEAN;
-            
-            // MENSAGEM ADICIONADA
-            Serial.print("Valor Teste (Contato " + String(j + 1) + "): ");
-            Serial.println(res[k][j], 4); // Exibe com 4 casas decimais
+            res_result = res_result+"C"+String(j+1)+String(k+1)+String(res[k][j])+";";
         }
         action_relay(relay_action);
     }
 }
 
-void loop() {
+void loop(){
+    /*
+    Opções para o primeiro caractere:
+    C -> Calibração;
+    V -> Iniciar Verificação dos contatos;
+    S -> Configurar o relé;
+    R -> Receber o resultado do relé;
+    */
     if (SerialBT.available() > 0) {
         String receivedData = SerialBT.readStringUntil('\n');
         receivedData.trim();
-
-        Serial.print("Comando recebido: ");
-        Serial.println(receivedData);
-
-        // --- ESTADO 2: COMANDO DE CALIBRAÇÃO 'C' ---
-        if (receivedData.equalsIgnoreCase("C")) {
-            if (is_configured) {
-                SerialBT.println("Pressione o botão para iniciar a calibração.");
+        char Op = receivedData[0];
+        receivedData = receivedData.substring(1, receivedData.length());
+        
+        if(Op == 'C'){
+            if(is_configured){
                 calibrate();
-                SerialBT.println("Calibração concluída. Envie 'V' para iniciar os testes.");
             } else {
-                SerialBT.println("ERRO: Configure o dispositivo primeiro (ex: 8DC).");
+                SerialBT.println("ERRO:S0");
             }
-        }
-        
-        // --- ESTADO 3: COMANDO DE TESTE 'V' ---
-        else if (receivedData.equalsIgnoreCase("V")) {
-            if (is_configured && is_calibrated) {
-                SerialBT.println("Iniciando medição para " + String(num_contacts) + " contatos.");
+        }else if(Op == 'V'){
+            if(is_calibrated){
+                state_RGB('O');
                 read_res(num_contacts, relay_to_use);
-                
-                // Envia os resultados para o app
-                for (int k = 0; k < 2; k++) {
-                    for (int i = 0; i < num_contacts; i++) {
-                        SerialBT.println("Res " + String(i + 1) + ": " + String(res[k][i], 3) + " Ohms");
-                    }
+                SerialBT.println(res_result.substring(0, res_result.length()-1));
+                reset_output();
+            }else{
+                String erro = "ERRO:C0";
+                if(is_configured){
+                    erro += ";S0";
                 }
-                SerialBT.println("Medição finalizada. Reconfigure para um novo teste.");
-                is_configured = false;
-                is_calibrated = false;
-
-            } else if (!is_configured) {
-                 SerialBT.println("ERRO: Configure o dispositivo primeiro (ex: 8DC).");
-            } else { 
-                 SerialBT.println("ERRO: Calibre o dispositivo antes (comando 'C').");
+                SerialBT.println(erro);
             }
-        }
-        
-        // --- ESTADO 1: COMANDO DE CONFIGURAÇÃO (DEFAULT) ---
-        else if (receivedData.length() >= 2) {
+        }else if(Op == 'V'){
+            is_calibrated = false;
             String type = receivedData.substring(receivedData.length() - 2);
             String contactsStr = receivedData.substring(0, receivedData.length() - 2);
-            
+
             num_contacts = contactsStr.toInt();
-            is_configured = false; 
-            
+
             if (type.equalsIgnoreCase("AC")) {
                 relay_to_use = RELAY_AC;
             } else if (type.equalsIgnoreCase("DC")) {
                 relay_to_use = RELAY_DC;
-            } else {
-                SerialBT.println("ERRO: Tipo inválido na configuração. Use AC ou DC.");
-                return; 
             }
 
             if (num_contacts > 0 && num_contacts <= 8) {
-                is_configured = true; 
-                is_calibrated = false;
-                SerialBT.println("Configurado: " + String(num_contacts) + " contatos, tipo " + type + ". Envie 'C' para calibrar.");
+                is_configured = true;
             } else {
-                SerialBT.println("ERRO: Número de contatos inválido. Use de 1 a 8.");
+                SerialBT.println("ERRO:S1");
             }
-        } else {
-             SerialBT.println("Comando desconhecido.");
+
+        }else if(Op == 'R'){
+            state_RGB(receivedData[0]);
         }
     }
 }
